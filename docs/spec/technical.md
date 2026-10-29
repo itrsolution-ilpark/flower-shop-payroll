@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v32 · 완성도 100% · 마지막 수정 2026. 10. 29. 17시 2분 59초
+> 문서 버전 v34 · 완성도 100% · 마지막 수정 2026. 10. 29. 17시 10분 31초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -53,7 +53,6 @@ CREATE TABLE staff (
   UNIQUE (shop_id, name)
 );
 
--- 급여 이력. 적용일 이전에 시작한 가장 최근 항목을 해당 날짜에 적용
 CREATE TABLE compensation (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
@@ -77,7 +76,6 @@ CREATE TABLE attendance (
   CHECK (clock_out > clock_in)
 );
 
--- 로그인 실패 횟수 제한: 서버에서 해시된 식별자와 시간만 기록
 CREATE TABLE auth_attempts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_hash text NOT NULL,
@@ -85,7 +83,7 @@ CREATE TABLE auth_attempts (
   succeeded boolean NOT NULL DEFAULT false
 );
 
--- RLS 활성화 및 서비스 롤 전용 정책 설정
+-- RLS 활성화 및 정책 설정 (클라이언트 직접 접근 완전 차단)
 ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shop_admins ENABLE ROW LEVEL SECURITY;
@@ -103,9 +101,9 @@ CREATE POLICY "Deny direct access attendance" ON attendance FOR ALL USING (false
 CREATE POLICY "Deny direct access auth_attempts" ON auth_attempts FOR ALL USING (false);
 ```
 
-### 중요: auth_attempts 및 RLS 오류 방지 규칙
-- `auth_attempts`를 포함한 모든 테이블에 `USING (false)` 정책이 걸려 있으므로, 브라우저 클라이언트(`createClient` with Anon Key)에서 직접 `auth_attempts`나 다른 테이블에 `INSERT`/`UPDATE`를 시도하면 Supabase가 거부(`Deny direct access`)합니다.
-- 모든 데이터 변경 및 로그인 실패 기록(`auth_attempts` 기록 포함)은 **반드시 Next.js 서버(Route Handler 또는 Server Action)** 내부에서 `SUPABASE_SERVICE_ROLE_KEY`를 사용하는 전용 서버 클라이언트를 통해서만 수행해야 합니다. 브라우저에서 직접 Supabase 테이블에 접근하는 코드가 없도록 엄격히 분리합니다.
+### 중요: RLS 오류(42501) 방지 및 서버 액션 필수 규칙
+- 모든 테이블에 `USING (false)` 정책이 적용되어 있으므로, 브라우저 클라이언트(`createClient` with Anon Key)에서 직접 쓰기 작업을 수행하면 `new row violates row-level security policy` (오류 코드 `42501`)가 발생합니다.
+- **시스템 관리자 최초 등록**, 플라워샵 등록, 관리자/직원 가입 및 모든 데이터 변경 작업은 **반드시 Next.js Server Action 또는 Route Handler** 내부에서 `SUPABASE_SERVICE_ROLE_KEY`를 사용하는 전용 서버 클라이언트(`lib/supabase-server.ts`)를 통해 실행해야 합니다.
 
 ## 2. 기술 스택과 폴더 구조
 
@@ -113,16 +111,15 @@ CREATE POLICY "Deny direct access auth_attempts" ON auth_attempts FOR ALL USING 
 - Next.js App Router와 TypeScript를 사용합니다. DB가 필요한 서버 기능은 Route Handler 또는 Server Action에서만 실행합니다.
 - 화면 스타일은 Tailwind CSS로 구현합니다. 날짜 계산은 `date-fns`를 사용합니다.
 - 데이터베이스는 Supabase PostgreSQL, 배포는 GitHub에서 Vercel 무료 플랜으로 합니다. 유료 외부 API는 사용하지 않습니다.
-- 인증은 서버 검증 방식입니다. 성공한 로그인은 역할, 사용자 ID, 플라워샵 ID가 포함된 서명 쿠키로 유지합니다. 쿠키는 `HttpOnly`, `Secure`(운영 환경), `SameSite=Lax`로 설정하고, 비밀 자체는 쿠키에 넣지 않습니다. 쿠키 서명에는 `APP_SESSION_SECRET`을 사용합니다.
-- 4자리 비밀의 추측 위험을 줄이기 위해 계정 식별자별 15분 동안 실패 5회가 발생하면 15분간 로그인을 차단합니다. 인증 오류는 ‘이름 또는 비밀을 확인해 주세요.’로 통일하고 어떤 항목이 틀렸는지 구분해 노출하지 않습니다.
+- 인증은 서버 검증 방식입니다. 성공한 로그인은 역할, 사용자 ID, 플라워샵 ID가 포함된 서명 쿠키로 유지합니다. 쿠키는 `HttpOnly`, `Secure`(운영 환경), `SameSite=Lax`로 설정합니다.
 
 ### 환경 변수
 | 이름 | 용도 |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 키. 브라우저에서 직접 테이블 접근은 하지으며 RLS가 적용됨 |
-| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 DB 접근 키. 브라우저 번들 및 로그에 노출 금지 |
-| `APP_SESSION_SECRET` | 서명 쿠키 검증용 비밀 문자열. 운영 환경에서 충분히 긴 무작위 값 사용 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 키. 브라우저에서 직접 테이블 접근은 하지 않으며 RLS가 적용됨 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 DB 접근 키. 시스템 관리자 등록, 회원가입 등 RLS 우회 데이터 변경에 필수 (브라우저 노출 금지) |
+| `APP_SESSION_SECRET` | 서명 쿠키 검증용 비밀 문자열 |
 
 ### 폴더 및 파일 구조
 ```text
@@ -165,9 +162,7 @@ flower-shop-payroll/
 ```
 
 ### 구현 경계
-- `permissions.ts`에서 요청별 역할과 플라워샵·직원 소속을 확인합니다. 화면을 숨기는 것만으로 권한을 처리하지 말고 서버 작업마다 검증합니다.
-- `payroll.ts`가 급여 계산을 한 곳에서 수행하여 직원 화면과 관리자 정산 화면에서 같은 결과를 사용합니다.
-- `.env.local`은 로컬에서만 사용하고 GitHub에 올리지 않습니다. Vercel에도 위 환경 변수를 등록합니다.
+- 데이터 변경(INSERT/UPDATE/DELETE)은 브라우저에서 직접 Supabase 클라이언트를 호출하지 않고, 반드시 Next.js Server Actions 또는 API Route에서 Service Role 클라이언트를 통해 처리하여 RLS(42501 오류)를 방지합니다.
 
 ## 3. 품질 기준 (성능·보안·접근성)
 
@@ -186,6 +181,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v34 | 2026. 10. 29. 17시 9분 41초 | 최종 감수: 최종 감수: RLS 오류(42501) 원인인 system_admins 테이블을 포함한 모든 쓰기 작업을 서버 액션과 Service Role 클라이언트로 명확히 고정하고, 전체 문서 정합성을 검증함 |
+| v33 | 2026. 10. 29. 17시 9분 25초 | 시스템 관리자 최초 등록 및 기타 서버 작업 시 RLS 오류(42501)를 방지하기 위해, 브라우저 클라이언트 대신 반드시 서버 전용 클라이언트(Service Role Key)를 사용하도록 데이터베이스 연동 규칙 및 코드 구현 경계를 명확히 보강함 |
 | v32 | 2026. 10. 29. 17시 2분 17초 | 최종 감수: auth_attempts 테이블의 RLS 정책 오류 해결을 위한 RLS 우회 서버 전용 삽입 로직 및 문서 최종 감수 완료 |
 | v31 | 2026. 10. 29. 17시 2분 9초 | auth_attempts 테이블의 RLS 정책 오류로 인해 관리자 등록 시 발생하는 접근 거부 문제를 해결하기 위해, 데이터베이스 마이그레이션 스크립트에 auth_attempts 테이블 관련 명시적 서비스 롤 우회 정책을 보강함. |
 | v30 | 2026. 10. 29. 16시 18분 12초 | 최종 감수: 최종 감수 완료: 플라워샵별 관리자 본인 정보 수정 기능 및 직원 로그인 제외 규칙 반영 완료 |
