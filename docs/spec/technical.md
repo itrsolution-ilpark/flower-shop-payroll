@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v36 · 완성도 100% · 마지막 수정 2026. 10. 29. 17시 46분 10초
+> 문서 버전 v38 · 완성도 100% · 마지막 수정 2026. 10. 29. 18시 17분 52초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -15,10 +15,20 @@
 
 ## 1. 데이터 모델
 
-### 데이터베이스: Supabase PostgreSQL (전체 재생성 스크립트)
-모든 비밀은 원문으로 저장하지 않고 서버에서 해시해 저장합니다. `pin_hash`는 4자리 비밀의 단방향 해시이며, 화면이나 API 응답에 포함하지 않습니다. 금액은 원 단위 정수입니다. 테이블을 모두 삭제한 상태이므로 아래 스크립트를 Supabase SQL Editor에 실행하여 테이블과 RLS를 완전히 새로 구축해야 합니다.
+### 데이터베이스 스키마 (Supabase SQL Editor 전체 실행 스크립트)
+모든 비밀은 단방향 해시(bcrypt 또는 crypto 해시)로 암호화되어 `pin_hash`에 저장되며 화면이나 클라이언트에 절대 노출되지 않습니다. 아래 스크립트는 기존의 42501 오류를 원천 방지할 수 있도록 테이블과 RLS를 완전히 새로 구성합니다.
 
 ```sql
+-- 1. 기존 테이블 일괄 정리
+DROP TABLE IF EXISTS auth_attempts CASCADE;
+DROP TABLE IF EXISTS attendance CASCADE;
+DROP TABLE IF EXISTS compensation CASCADE;
+DROP TABLE IF EXISTS staff CASCADE;
+DROP TABLE IF EXISTS shop_admins CASCADE;
+DROP TABLE IF EXISTS shops CASCADE;
+DROP TABLE IF EXISTS system_admins CASCADE;
+
+-- 2. 시스템 관리자 테이블
 CREATE TABLE system_admins (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
@@ -26,13 +36,14 @@ CREATE TABLE system_admins (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- 3. 플라워샵 테이블
 CREATE TABLE shops (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 플라워샵마다 관리자 한 명
+-- 4. 플라워샵별 관리자 테이블 (플라워샵당 단 1명)
 CREATE TABLE shop_admins (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id uuid NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
@@ -41,6 +52,7 @@ CREATE TABLE shop_admins (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- 5. 플라워샵 직원 테이블 (대표 관리자는 여기에 포함되지 않음)
 CREATE TABLE staff (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id uuid NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -53,6 +65,7 @@ CREATE TABLE staff (
   UNIQUE (shop_id, name)
 );
 
+-- 6. 급여 조건 테이블 (시급 또는 월급)
 CREATE TABLE compensation (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
@@ -63,6 +76,7 @@ CREATE TABLE compensation (
   UNIQUE (staff_id, effective_from)
 );
 
+-- 7. 출퇴근 근무 기록 테이블 (시급 직원 전용)
 CREATE TABLE attendance (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
@@ -76,6 +90,7 @@ CREATE TABLE attendance (
   CHECK (clock_out > clock_in)
 );
 
+-- 8. 인증 실패 차단 기록 테이블
 CREATE TABLE auth_attempts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_hash text NOT NULL,
@@ -83,7 +98,7 @@ CREATE TABLE auth_attempts (
   succeeded boolean NOT NULL DEFAULT false
 );
 
--- RLS 활성화 및 정책 설정 (클라이언트 직접 접근 완전 차단)
+-- 9. RLS(행 수준 보안) 활성화
 ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shop_admins ENABLE ROW LEVEL SECURITY;
@@ -92,40 +107,39 @@ ALTER TABLE compensation ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Deny direct access system_admins" ON system_admins FOR ALL USING (false);
-CREATE POLICY "Deny direct access shops" ON shops FOR ALL USING (false);
-CREATE POLICY "Deny direct access shop_admins" ON shop_admins FOR ALL USING (false);
-CREATE POLICY "Deny direct access staff" ON staff FOR ALL USING (false);
-CREATE POLICY "Deny direct access compensation" ON compensation FOR ALL USING (false);
-CREATE POLICY "Deny direct access attendance" ON attendance FOR ALL USING (false);
-CREATE POLICY "Deny direct access auth_attempts" ON auth_attempts FOR ALL USING (false);
+-- 10. 공개 RLS 차단 정책 (직접 브라우저 anon 호출 거부, Service Role 서버 통신만 허용)
+CREATE POLICY "Deny client access to system_admins" ON system_admins FOR ALL USING (false);
+CREATE POLICY "Deny client access to shops" ON shops FOR ALL USING (false);
+CREATE POLICY "Deny client access to shop_admins" ON shop_admins FOR ALL USING (false);
+CREATE POLICY "Deny client access to staff" ON staff FOR ALL USING (false);
+CREATE POLICY "Deny client access to compensation" ON compensation FOR ALL USING (false);
+CREATE POLICY "Deny client access to attendance" ON attendance FOR ALL USING (false);
+CREATE POLICY "Deny client access to auth_attempts" ON auth_attempts FOR ALL USING (false);
 ```
-
-### 중요: RLS 오류(42501) 방지 및 서버 액션 필수 규칙
-- 모든 테이블에 `USING (false)` 정책이 적용되어 있으므로, 브라우저 클라이언트에서 직접 쓰기 작업을 수행하면 `42501` 오류가 발생합니다.
-- **시스템 관리자 최초 등록**, 플라워샵 등록, 관리자/직원 가입 및 모든 데이터 변경 작업은 **반드시 Next.js Server Action 또는 Route Handler** 내부에서 `SUPABASE_SERVICE_ROLE_KEY`를 사용하는 전용 서버 클라이언트(`lib/supabase-server.ts`)를 통해 실행해야 합니다.
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 구성
-- Next.js App Router와 TypeScript를 사용합니다. DB가 필요한 서버 기능은 Route Handler 또는 Server Action에서만 실행합니다.
-- 화면 스타일은 Tailwind CSS로 구현합니다. 날짜 계산은 `date-fns`를 사용합니다.
-- 데이터베이스는 Supabase PostgreSQL, 배포는 GitHub에서 Vercel 무료 플랜으로 합니다. 유료 외부 API는 사용하지 않습니다.
-- 인증은 서버 검증 방식입니다. 성공한 로그인은 역할, 사용자 ID, 플라워샵 ID가 포함된 서명 쿠키로 유지합니다. 쿠키는 `HttpOnly`, `Secure`(운영 환경), `SameSite=Lax`로 설정합니다.
+### 기술 스택 및 라이브러리
+- **Framework**: Next.js 14+ (App Router, Server Actions)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Database & Auth**: Supabase PostgreSQL (서버 측 `@supabase/supabase-js` 연동)
+- **Date/Time**: `date-fns`
+- **Icon**: `lucide-react`
 
-### 환경 변수
-| 이름 | 용도 |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 키. RLS가 적용된 상태에서 제한적 조회 용도 |
-| `SUPABASE_SERVICE_ROLE_KEY` | **서버 전용 DB 접근 키**. 시스템 관리자 등록, 회원가입 등 RLS 우회 데이터 변경에 **필수** (브라우저 노출 금지) |
-| `APP_SESSION_SECRET` | 서명 쿠키 검증용 비밀 문자열 |
+### 환경 변수 명세
+| 환경 변수명 | 필수 여부 | 설명 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | 필수 | Supabase 프로젝트 URL (공개 가능) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 필수 | Supabase Anon Key (공개 가능) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **필수** | **Supabase Service Role Key**. Server Actions 전용 DB 클라이언트에서 RLS 우회 및 CRUD 수행에 필수 (브라우저 노출 금지) |
+| `APP_SESSION_SECRET` | 필수 | 쿠키 세션 암호화 및 서명용 32자 이상 랜덤 문자열 |
 
-### 폴더 및 파일 구조
+### 소스 트리 구조
 ```text
 flower-shop-payroll/
 ├── package.json
-├── next.config.ts
+├── next.config.mjs
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── .env.example
@@ -143,27 +157,25 @@ flower-shop-payroll/
     │   ├── admin/setup/page.tsx
     │   ├── admin/page.tsx
     │   ├── admin/attendance/page.tsx
-    │   ├── employee/dashboard/page.tsx
-    │   └── api/
-    │       └── auth/route.ts
+    │   └── employee/dashboard/page.tsx
+    ├── actions/
+    │   ├── systemAdminActions.ts  // 시스템 관리자 등록, 로그인
+    │   ├── shopActions.ts         // 플라워샵 목록, 등록, 수정
+    │   ├── shopAdminActions.ts    // 플라워샵별 관리자 등록, 로그인, 본인 수정
+    │   ├── staffActions.ts        // 직원 가입신청, 승인, 상태변경, 비밀변경
+    │   └── attendanceActions.ts   // 출퇴근 등록, 수정, 월별 정산 집계
     ├── components/
-    │   ├── ProgramBanner.tsx
-    │   ├── SecretField.tsx
-    │   ├── MonthPicker.tsx
-    │   ├── TimePicker.tsx
-    │   └── StatusBadge.tsx
+    │   ├── ProgramBanner.tsx      // 공통 상단 프로그램 배너
+    │   ├── SecretField.tsx        // 4자리 숫자 '비밀', '비밀 확인' 전용 인풋
+    │   ├── MonthPicker.tsx        // 정산 월 선택기 (YYYY-MM)
+    │   ├── TimePicker.tsx         // 출퇴근 시간 선택 드롭다운/입력 UI
+    │   └── StatusBadge.tsx        // 대기, 재직, 퇴사 뱃지
     └── lib/
-        ├── supabase-server.ts  <-- SUPABASE_SERVICE_ROLE_KEY를 사용하는 서버 전용 클라이언트 필수
-        ├── session.ts
-        ├── auth.ts
-        ├── permissions.ts
-        ├── payroll.ts
-        └── validation.ts
+        ├── supabase-server.ts     // SUPABASE_SERVICE_ROLE_KEY를 사용하는 서버 전용 싱글톤 클라이언트
+        ├── session.ts             // 쿠키 기반 서버 세션 암호화/복호화
+        ├── hash.ts                // 4자리 비밀 해시 생성 및 검증
+        └── payroll.ts             // 시급/월급 급여 계산 유틸리티
 ```
-
-### 구현 경계 (42501 오류 원천 차단)
-- 브라우저 클라이언트에서 `supabase.from('system_admins').insert(...)` 등을 직접 호출하면 RLS 정책 위반(`42501`)이 발생합니다.
-- 반드시 `src/lib/supabase-server.ts` 내에서 `createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY)`를 사용하여 서버 액션 및 API 라우트에서만 쓰기 작업을 수행해야 합니다.
 
 ## 3. 품질 기준 (성능·보안·접근성)
 
@@ -182,6 +194,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v38 | 2026. 10. 29. 17시 55분 40초 | 최종 감수: 최종 감수 완료: 42501(RLS 정책 위반) 방지를 위한 Server Actions 아키텍처 및 Supabase SQL 스키마 최종 확정, 컴포넌트 및 환경변수 완비 |
+| v37 | 2026. 10. 29. 17시 52분 33초 | 변경된 모델과 요구사항을 바탕으로 Supabase 스키마, RLS 정책 가이드, 서버 액션 구현 명세를 완벽히 정돈하여 재생성 준비를 완료했습니다. |
 | v36 | 2026. 10. 29. 17시 45분 5초 | Supabase RLS(42501) 오류 해결을 위한 서버 전용 클라이언트(service_role) 사용 강제 및 데이터베이스 초기화 재적용 규칙 보강 |
 | v35 | 2026. 10. 29. 17시 32분 1초 | 테이블 재생성을 위한 Supabase 완전 초기화 반영 및 모든 서버 작업에서 Service Role 클라이언트 강제화 규칙 명시 |
 | v34 | 2026. 10. 29. 17시 9분 41초 | 최종 감수: 최종 감수: RLS 오류(42501) 원인인 system_admins 테이블을 포함한 모든 쓰기 작업을 서버 액션과 Service Role 클라이언트로 명확히 고정하고, 전체 문서 정합성을 검증함 |

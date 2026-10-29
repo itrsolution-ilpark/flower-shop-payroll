@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getServiceSupabase } from '@/lib/supabaseServer'
+import { getServiceSupabase } from '@/lib/supabase-server'
+import { hashPin } from '@/lib/hash'
 
 export async function POST(request: Request) {
   try {
@@ -23,10 +24,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '이미 시스템 관리자가 존재합니다.' }, { status: 400 })
     }
 
+    const pin_hash = hashPin(pin_code)
+
     const { data, error } = await supabaseAdmin.from('system_admins').insert([
       {
         name,
-        pin_code,
+        pin_hash,
       },
     ]).select()
 

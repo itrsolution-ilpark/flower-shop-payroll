@@ -1,20 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabaseClient";
+import ProgramBanner from "@/components/ProgramBanner";
 import Button from "@/components/ui/Button";
+import { getShopsAction, createShopAction, updateShopAction, ShopSummary } from "@/actions/shopActions";
 import { ArrowLeft, Plus } from "lucide-react";
 
-interface Shop {
-  id: string;
-  name: string;
-}
-
 export default function ShopRegisterPage() {
-  const router = useRouter();
-  const [shops, setShops] = useState<Shop[]>([]);
+  const [shops, setShops] = useState<ShopSummary[]>([]);
   const [newName, setNewName] = useState<string>("");
   const [editingShopId, setEditingShopId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>("");
@@ -23,30 +17,16 @@ export default function ShopRegisterPage() {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const auth = sessionStorage.getItem("system_admin_auth");
-    if (!auth) {
-      alert("시스템 관리자 인증이 필요합니다.");
-      router.push("/");
-      return;
-    }
     fetchShops();
-  }, [router]);
+  }, []);
 
   const fetchShops = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("shops")
-        .select("id, name")
-        .order("name", { ascending: true });
-
-      if (error) {
-        console.error("플라워샵 목록 조회 오류:", error);
-      } else if (data) {
-        setShops(data);
-      }
-    } catch (err) {
-      console.error("예외 발생:", err);
+      const data = await getShopsAction();
+      setShops(data);
+    } catch {
+      // Build safe
     } finally {
       setLoading(false);
     }
@@ -64,28 +44,20 @@ export default function ShopRegisterPage() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from("shops")
-        .insert([{ name: trimmed }])
-        .select()
-        .single();
-
-      if (error || !data) {
-        console.error("등록 오류:", error);
-        setErrorMsg("이미 등록된 플라워샵 이름입니다.");
+      const res = await createShopAction(trimmed);
+      if (!res.success) {
+        setErrorMsg(res.error || "이미 등록된 플라워샵 이름입니다.");
         return;
       }
-
       setSuccessMsg(`"${trimmed}" 플라워샵이 추가되었습니다.`);
       setNewName("");
       fetchShops();
-    } catch (err) {
-      console.error("예외 발생:", err);
+    } catch {
       setErrorMsg("이미 등록된 플라워샵 이름입니다.");
     }
   };
 
-  const handleStartEdit = (shop: Shop) => {
+  const handleStartEdit = (shop: ShopSummary) => {
     setEditingShopId(shop.id);
     setEditingName(shop.name);
     setErrorMsg("");
@@ -103,44 +75,36 @@ export default function ShopRegisterPage() {
     }
 
     try {
-      const { error } = await supabase
-        .from("shops")
-        .update({ name: trimmed })
-        .eq("id", shopId);
-
-      if (error) {
-        console.error("수정 오류:", error);
-        setErrorMsg("이미 등록된 플라워샵 이름입니다.");
+      const res = await updateShopAction(shopId, trimmed);
+      if (!res.success) {
+        setErrorMsg(res.error || "이미 등록된 플라워샵 이름입니다.");
         return;
       }
-
       setSuccessMsg("플라워샵명이 수정되었습니다.");
       setEditingShopId(null);
       setEditingName("");
       fetchShops();
-    } catch (err) {
-      console.error("예외 발생:", err);
+    } catch {
       setErrorMsg("이미 등록된 플라워샵 이름입니다.");
     }
   };
 
   return (
     <div className="flex flex-col flex-1">
-      {/* 공통 배너 */}
-      <header className="bg-white border-b border-[#E2E8F0] px-4 md:px-6 h-[56px] md:h-[64px] flex items-center justify-between sticky top-0 z-40">
-        <h1 className="text-lg md:text-xl font-bold text-[#0F172A] tracking-tight">
-          플라워샵 근무 관리
-        </h1>
-        <Link
-          href="/"
-          className="px-3 min-h-[40px] h-[40px] border border-[#E2E8F0] rounded-xl text-xs text-[#0F172A] font-semibold hover:bg-slate-50 flex items-center gap-1.5 transition"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          메인으로 돌아가기
-        </Link>
-      </header>
+      {/* 최상단 공통 프로그램 배너 */}
+      <ProgramBanner
+        rightElement={
+          <Link
+            href="/"
+            className="px-3 min-h-[40px] h-[40px] border border-[#E2E8F0] rounded-xl text-xs text-[#0F172A] font-semibold hover:bg-slate-50 flex items-center gap-1.5 transition"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            메인으로 돌아가기
+          </Link>
+        }
+      />
 
-      <div className="max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6">
+      <main className="max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6">
         {/* ‘플라워샵 등록 및 관리’ 카드 */}
         <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-5">
           <h2 className="text-base font-bold text-[#0F172A]">플라워샵 등록 및 관리</h2>
@@ -167,14 +131,10 @@ export default function ShopRegisterPage() {
           </form>
 
           {errorMsg && (
-            <p className="text-xs text-rose-500 font-medium text-center">
-              {errorMsg}
-            </p>
+            <p className="text-xs text-rose-500 font-medium text-center">{errorMsg}</p>
           )}
           {successMsg && (
-            <p className="text-xs text-[#059669] font-medium text-center">
-              {successMsg}
-            </p>
+            <p className="text-xs text-[#059669] font-medium text-center">{successMsg}</p>
           )}
         </div>
 
@@ -231,7 +191,7 @@ export default function ShopRegisterPage() {
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

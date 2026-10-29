@@ -1,5 +1,6 @@
-/** @type {import('tailwindcss').Config} */
-module.exports = {
+import type { Config } from "tailwindcss";
+
+const config: Config = {
   content: [
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -17,12 +18,14 @@ module.exports = {
         textColor: "#0F172A",
         subText: "#64748B",
         borderLine: "#E2E8F0",
-        errorColor: "#EF4444",
       },
       borderRadius: {
-        xl: "0.75rem",
+        xl: "12px",
+        "2xl": "16px",
       },
     },
   },
   plugins: [],
-}
+};
+
+export default config;

@@ -2,118 +2,116 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import ProgramBanner from "@/components/ProgramBanner";
+import SecretField from "@/components/SecretField";
 import Button from "@/components/ui/Button";
+import {
+  getSystemAdminCountAction,
+  registerSystemAdminAction,
+  loginSystemAdminAction,
+} from "@/actions/systemAdminActions";
 
 export default function SystemSetupPage() {
   const router = useRouter();
+  const [isInitialSetup, setIsInitialSetup] = useState<boolean>(true);
   const [name, setName] = useState<string>("");
-  const [pinCode, setPinCode] = useState<string>("");
-  const [confirmPinCode, setConfirmPinCode] = useState<string>("");
+  const [secret, setSecret] = useState<string>("");
+  const [confirmSecret, setConfirmSecret] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
-    checkSystemAdmin();
+    checkAdmin();
   }, []);
 
-  const checkSystemAdmin = async () => {
+  const checkAdmin = async () => {
     try {
-      const { data, error } = await supabase
-        .from("system_admins")
-        .select("id");
-
-      if (error) {
-        console.error("시스템 관리자 조회 오류:", error);
-      }
-
-      if (data && data.length > 0) {
-        router.push("/");
-      } else {
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error("예외 발생:", err);
+      const count = await getSystemAdminCountAction();
+      setIsInitialSetup(count === 0);
+    } catch {
+      setIsInitialSetup(true);
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleRegisterSystemAdmin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
     if (!name.trim()) {
-      setErrorMsg("관리자 이름을 입력해주세요.");
+      setErrorMsg("이름을 입력해주세요.");
       return;
     }
 
-    if (!pinCode || pinCode.length !== 4 || isNaN(Number(pinCode))) {
+    if (secret.length !== 4) {
       setErrorMsg("비밀은 숫자 4자리여야 합니다.");
       return;
     }
 
-    if (pinCode !== confirmPinCode) {
-      setErrorMsg("비밀 확인이 일치하지 않습니다.");
-      return;
-    }
-
-    setLoading(true);
-
+    setSubmitting(true);
     try {
-      const res = await fetch("/api/system-admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), pin_code: pinCode }),
-      });
+      if (isInitialSetup) {
+        if (secret !== confirmSecret) {
+          setErrorMsg("비밀 확인이 일치하지 않습니다.");
+          setSubmitting(false);
+          return;
+        }
 
-      const result = await res.json();
-      if (!res.ok) {
-        setErrorMsg(result.error || "시스템 관리자 등록 중 오류가 발생했습니다.");
-        setLoading(false);
-        return;
+        const res = await registerSystemAdminAction(name, secret, confirmSecret);
+        if (!res.success) {
+          setErrorMsg(res.error || "시스템 관리자 등록에 실패했습니다.");
+          setSubmitting(false);
+          return;
+        }
+
+        router.push("/shop/register");
+      } else {
+        const res = await loginSystemAdminAction(name, secret);
+        if (!res.success) {
+          setErrorMsg(res.error || "이름 또는 비밀을 확인해 주세요.");
+          setSubmitting(false);
+          return;
+        }
+
+        router.push("/shop/register");
       }
-
-      sessionStorage.setItem("system_admin_auth", JSON.stringify({ name: name.trim() }));
-      alert("시스템 관리자 생성이 완료되었습니다.");
-      router.push("/");
-    } catch (err) {
-      console.error("예외 발생:", err);
+    } catch {
       setErrorMsg("처리 중 오류가 발생했습니다.");
-      setLoading(false);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-[#64748B]">
-        로딩 중...
+      <div className="flex flex-col flex-1">
+        <ProgramBanner />
+        <div className="flex flex-1 items-center justify-center p-6 text-xs text-[#64748B]">
+          로딩 중...
+        </div>
       </div>
     );
   }
 
-  const isFormValid =
-    name.trim().length > 0 &&
-    /^[0-9]{4}$/.test(pinCode) &&
-    pinCode === confirmPinCode;
-
   return (
     <div className="flex flex-col flex-1">
-      <header className="bg-white border-b border-[#E2E8F0] px-4 md:px-6 h-[56px] md:h-[64px] flex items-center justify-between sticky top-0 z-40">
-        <h1 className="text-lg md:text-xl font-bold text-[#0F172A] tracking-tight">
-          플라워샵 근무 관리
-        </h1>
-      </header>
+      {/* 최상단 공통 프로그램 배너 */}
+      <ProgramBanner />
 
-      <div className="max-w-md mx-auto w-full p-4 md:p-6 space-y-6 my-auto">
+      <main className="max-w-md mx-auto w-full p-4 md:p-6 space-y-6 my-auto">
         <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-5">
           <div className="text-center space-y-1">
             <h2 className="text-lg font-bold text-[#0F172A]">시스템 관리자 등록 및 로그인</h2>
             <p className="text-xs text-[#64748B]">
-              시스템 관리자가 0명입니다. 최초 계정을 생성하세요.
+              {isInitialSetup
+                ? "시스템 관리자가 0명입니다. 최초 계정을 생성하세요."
+                : "이미 등록된 관리자가 있습니다. 로그인하세요."}
             </p>
           </div>
 
-          <form onSubmit={handleRegisterSystemAdmin} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[#0F172A] mb-1">
                 이름
@@ -127,35 +125,19 @@ export default function SystemSetupPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#0F172A] mb-1">
-                비밀
-              </label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                value={pinCode}
-                onChange={(e) => setPinCode(e.target.value.replace(/[^0-9]/g, ""))}
-                placeholder="••••"
-                className="w-full min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] text-center tracking-widest text-lg font-bold bg-white"
-              />
-            </div>
+            <SecretField
+              label="비밀"
+              value={secret}
+              onChange={setSecret}
+            />
 
-            <div>
-              <label className="block text-xs font-semibold text-[#0F172A] mb-1">
-                비밀 확인
-              </label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                value={confirmPinCode}
-                onChange={(e) => setConfirmPinCode(e.target.value.replace(/[^0-9]/g, ""))}
-                placeholder="••••"
-                className="w-full min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] text-center tracking-widest text-lg font-bold bg-white"
+            {isInitialSetup && (
+              <SecretField
+                label="비밀 확인"
+                value={confirmSecret}
+                onChange={setConfirmSecret}
               />
-            </div>
+            )}
 
             {errorMsg && (
               <p className="text-xs text-rose-500 text-center font-medium">
@@ -164,17 +146,17 @@ export default function SystemSetupPage() {
             )}
 
             <div className="pt-2">
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={!isFormValid || loading}
-              >
-                시스템 관리자 생성
+              <Button type="submit" variant="primary" disabled={submitting}>
+                {submitting
+                  ? "처리 중..."
+                  : isInitialSetup
+                  ? "시스템 관리자 생성"
+                  : "로그인"}
               </Button>
             </div>
           </form>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
