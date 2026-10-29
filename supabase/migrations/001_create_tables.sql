@@ -1,5 +1,12 @@
+create table if not exists shops (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamp with time zone default now()
+);
+
 create table if not exists staff (
   id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references shops(id) on delete cascade,
   name text not null,
   pin_code text not null,
   hourly_wage integer not null default 10000,
@@ -17,8 +24,17 @@ create table if not exists attendance (
   created_at timestamp with time zone default now()
 );
 
+alter table shops enable row level security;
 alter table staff enable row level security;
 alter table attendance enable row level security;
+
+drop policy if exists "Allow select shops for all" on shops;
+create policy "Allow select shops for all" on shops
+  for select using (true);
+
+drop policy if exists "Allow insert shops for all" on shops;
+create policy "Allow insert shops for all" on shops
+  for insert with check (true);
 
 drop policy if exists "Allow select staff for all" on staff;
 create policy "Allow select staff for all" on staff

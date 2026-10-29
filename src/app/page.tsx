@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Button from "@/components/Button";
 
+interface Shop {
+  id: string;
+  name: string;
+}
+
 interface Staff {
   id: string;
+  shop_id: string;
   name: string;
   is_admin: boolean;
   hourly_wage: number;
@@ -15,6 +21,8 @@ interface Staff {
 
 export default function LoginPage() {
   const router = useRouter();
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [selectedShopId, setSelectedShopId] = useState<string>("");
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [pinCode, setPinCode] = useState<string>("");
@@ -22,26 +30,31 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   useEffect(() => {
-    fetchStaff();
+    fetchShops();
   }, []);
 
-  const fetchStaff = async () => {
+  useEffect(() => {
+    if (selectedShopId) {
+      fetchStaffByShop(selectedShopId);
+    } else {
+      setStaffList([]);
+      setSelectedStaffId("");
+    }
+  }, [selectedShopId]);
+
+  const fetchShops = async () => {
     try {
       const { data, error } = await supabase
-        .from("staff")
-        .select("id, name, is_admin, hourly_wage, status")
+        .from("shops")
+        .select("id, name")
         .order("name", { ascending: true });
 
       if (error) {
-        console.error("직원 목록 조회 오류:", error);
+        console.error("화원 목록 조회 오류:", error);
       } else if (data) {
-        // active 상태인 직원 또는 관리자만 로그인 선택 가능하도록 할 수 있으나 드롭다운은 전체 허용하되 로그인 시 체크 가능
-        setStaffList(data);
-        const validStaff = data.filter((s) => s.is_admin || s.status === "active");
-        if (validStaff.length > 0) {
-          setSelectedStaffId(validStaff[0].id);
-        } else if (data.length > 0) {
-          setSelectedStaffId(data[0].id);
+        setShops(data);
+        if (data.length > 0) {
+          setSelectedShopId(data[0].id);
         }
       }
     } catch (err) {
@@ -51,9 +64,37 @@ export default function LoginPage() {
     }
   };
 
+  const fetchStaffByShop = async (shopId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("staff")
+        .select("*")
+        .eq("shop_id", shopId)
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("직원 목록 조회 오류:", error);
+      } else if (data) {
+        setStaffList(data);
+        if (data.length > 0) {
+          setSelectedStaffId(data[0].id);
+        } else {
+          setSelectedStaffId("");
+        }
+      }
+    } catch (err) {
+      console.error("예외 발생:", err);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+
+    if (!selectedShopId) {
+      setErrorMsg("화원을 선택해주세요.");
+      return;
+    }
 
     if (!selectedStaffId) {
       setErrorMsg("직원을 선택해주세요.");
@@ -94,6 +135,7 @@ export default function LoginPage() {
         "flower_shop_user",
         JSON.stringify({
           id: data.id,
+          shop_id: data.shop_id,
           name: data.name,
           is_admin: data.is_admin,
           hourly_wage: data.hourly_wage,
@@ -119,7 +161,7 @@ export default function LoginPage() {
           플라워샵 근무 및 급여 관리 시스템
         </h1>
         <p className="text-sm text-gray-600">
-          본인 이름을 선택하고 4자리 PIN을 입력해주세요.
+          화원을 선택하고 본인 이름을 선택한 뒤 4자리 PIN을 입력해주세요.
         </p>
       </div>
 
@@ -128,19 +170,48 @@ export default function LoginPage() {
       ) : (
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-textColor">
+                화원 선택
+              </label>
+              <a
+                href="/shop/register"
+                className="text-xs text-primary hover:underline font-semibold"
+              >
+                + 화원 신규 등록
+              </a>
+            </div>
+            <select
+              value={selectedShopId}
+              onChange={(e) => setSelectedShopId(e.target.value)}
+              className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            >
+              {shops.map((shop) => (
+                <option key={shop.id} value={shop.id}>
+                  {shop.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-textColor mb-2">
-              직원 선택
+              직원 (또는 관리자) 선택
             </label>
             <select
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}
               className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
             >
-              {staffList.map((staff) => (
-                <option key={staff.id} value={staff.id}>
-                  {staff.name} {staff.is_admin ? "(관리자)" : `(${staff.status})`}
-                </option>
-              ))}
+              {staffList.length === 0 ? (
+                <option value="">등록된 계정이 없습니다</option>
+              ) : (
+                staffList.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name} {staff.is_admin ? "(관리자)" : `(${staff.status})`}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -171,7 +242,7 @@ export default function LoginPage() {
           <div className="text-center pt-4 space-y-2">
             <div>
               <a
-                href="/signup"
+                href={`/signup${selectedShopId ? `?shop_id=${selectedShopId}` : ""}`}
                 className="text-sm text-primary hover:underline font-medium"
               >
                 처음이신가요? 직원 회원가입하기
@@ -179,10 +250,10 @@ export default function LoginPage() {
             </div>
             <div>
               <a
-                href="/admin/setup"
+                href={`/admin/setup${selectedShopId ? `?shop_id=${selectedShopId}` : ""}`}
                 className="text-xs text-gray-500 hover:underline"
               >
-                최초 관리자 설정
+                화원별 관리자 설정 / 등록
               </a>
             </div>
           </div>

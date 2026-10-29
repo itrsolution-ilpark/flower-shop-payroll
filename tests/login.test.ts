@@ -12,9 +12,19 @@ describe('로그인 및 PIN 번호 검증 로직 테스트', () => {
     expect(validatePin('abcd')).toBe(false)
   })
 
+  it('PIN 번호 2회 입력 검증 (Validation) 테스트', () => {
+    const validateConfirmPin = (pin: string, confirm: string) => {
+      return pin === confirm && pin.length === 4
+    }
+
+    expect(validateConfirmPin('1234', '1234')).toBe(true)
+    expect(validateConfirmPin('1234', '5678')).toBe(false)
+  })
+
   it('직원 로그인 상태 및 PIN 일치 여부 확인', () => {
     const mockStaffActive = {
       id: 'staff-uuid-1',
+      shop_id: 'shop-uuid-1',
       name: '김플라워',
       pin_code: '7777',
       is_admin: false,
@@ -24,6 +34,7 @@ describe('로그인 및 PIN 번호 검증 로직 테스트', () => {
 
     const mockStaffPending = {
       id: 'staff-uuid-2',
+      shop_id: 'shop-uuid-1',
       name: '이대기',
       pin_code: '1111',
       is_admin: false,

@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 
 interface StaffUser {
   id: string;
+  shop_id: string;
   name: string;
   is_admin: boolean;
   hourly_wage: number;
@@ -41,7 +42,7 @@ export default function AdminDashboardPage() {
       return;
     }
     setUser(parsedUser);
-    fetchData(selectedMonth);
+    fetchData(parsedUser.shop_id, selectedMonth);
   }, [selectedMonth, router]);
 
   const calculateWorkHours = (inTime: string, outTime: string | null) => {
@@ -58,16 +59,24 @@ export default function AdminDashboardPage() {
     return diffMinutes / 60;
   };
 
-  const fetchData = async (month: string) => {
+  const fetchData = async (shopId: string, month: string) => {
     setLoading(true);
     try {
       const { data: staffData, error: staffError } = await supabase
         .from("staff")
         .select("*")
+        .eq("shop_id", shopId)
         .order("name", { ascending: true });
 
       if (staffError || !staffData) {
         console.error("직원 목록 조회 오류:", staffError);
+        setLoading(false);
+        return;
+      }
+
+      const staffIds = staffData.map((s) => s.id);
+      if (staffIds.length === 0) {
+        setSummaries([]);
         setLoading(false);
         return;
       }
@@ -80,6 +89,7 @@ export default function AdminDashboardPage() {
       const { data: attData, error: attError } = await supabase
         .from("attendance")
         .select("*")
+        .in("staff_id", staffIds)
         .gte("work_date", startDate)
         .lte("work_date", endDate);
 
@@ -125,7 +135,7 @@ export default function AdminDashboardPage() {
         <div className="flex justify-between items-center bg-background p-4 rounded-lg border border-secondary">
           <div>
             <h2 className="text-md font-bold text-textColor">월별 급여 집계표</h2>
-            <p className="text-xs text-gray-600">전 직원 월별 근무 및 급여 현황</p>
+            <p className="text-xs text-gray-600">소속 화원 직원별 월별 근무 및 급여 현황</p>
           </div>
           <div>
             <input

@@ -8,6 +8,7 @@ import Button from "@/components/Button";
 
 interface StaffUser {
   id: string;
+  shop_id: string;
   name: string;
   is_admin: boolean;
   hourly_wage: number;
@@ -16,6 +17,7 @@ interface StaffUser {
 
 interface StaffMember {
   id: string;
+  shop_id: string;
   name: string;
   hourly_wage: number;
   is_admin: boolean;
@@ -33,6 +35,7 @@ export default function AdminStaffPage() {
   const [editHourlyWage, setEditHourlyWage] = useState<string>("");
   const [editStatus, setEditStatus] = useState<string>("active");
   const [newPinCode, setNewPinCode] = useState<string>("");
+  const [confirmNewPinCode, setConfirmNewPinCode] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState<string>("");
 
@@ -48,15 +51,16 @@ export default function AdminStaffPage() {
       return;
     }
     setUser(parsedUser);
-    fetchStaffList();
+    fetchStaffList(parsedUser.shop_id);
   }, [router]);
 
-  const fetchStaffList = async () => {
+  const fetchStaffList = async (shopId: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("staff")
         .select("*")
+        .eq("shop_id", shopId)
         .order("name", { ascending: true });
 
       if (error) {
@@ -76,6 +80,7 @@ export default function AdminStaffPage() {
     setEditHourlyWage(staff.hourly_wage.toString());
     setEditStatus(staff.status || "active");
     setNewPinCode("");
+    setConfirmNewPinCode("");
     setErrorMsg("");
     setSuccessMsg("");
   };
@@ -109,6 +114,10 @@ export default function AdminStaffPage() {
         setErrorMsg("PIN 번호는 4자리 숫자여야 합니다.");
         return;
       }
+      if (newPinCode !== confirmNewPinCode) {
+        setErrorMsg("PIN 번호가 일치하지 않습니다. (비밀번호 확인 불일치)");
+        return;
+      }
       updateData.pin_code = newPinCode;
     }
 
@@ -125,7 +134,7 @@ export default function AdminStaffPage() {
       }
 
       setSuccessMsg("직원 정보가 성공적으로 수정되었습니다.");
-      fetchStaffList();
+      if (user) fetchStaffList(user.shop_id);
       setTimeout(() => {
         setEditingStaff(null);
       }, 1000);
@@ -147,7 +156,7 @@ export default function AdminStaffPage() {
         alert("상태 변경 중 오류가 발생했습니다.");
         return;
       }
-      fetchStaffList();
+      if (user) fetchStaffList(user.shop_id);
     } catch (err) {
       console.error("예외 발생:", err);
     }
@@ -250,7 +259,7 @@ export default function AdminStaffPage() {
 
       {editingStaff && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-4 shadow-xl">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-bold text-textColor">
               {editingStaff.name} 직원 정보 수정
             </h3>
@@ -293,6 +302,20 @@ export default function AdminStaffPage() {
                   maxLength={4}
                   value={newPinCode}
                   onChange={(e) => setNewPinCode(e.target.value)}
+                  placeholder="••••"
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-sm bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-textColor mb-1">
+                  새 4자리 PIN 번호 확인
+                </label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={confirmNewPinCode}
+                  onChange={(e) => setConfirmNewPinCode(e.target.value)}
                   placeholder="••••"
                   className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-sm bg-white"
                 />

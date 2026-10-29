@@ -1,34 +1,46 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Button from "@/components/Button";
 
-export default function AdminSetupPage() {
+interface Shop {
+  id: string;
+  name: string;
+}
+
+function AdminSetupContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const shopIdParam = searchParams.get("shop_id");
+
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [selectedShopId, setSelectedShopId] = useState<string>(shopIdParam || "");
   const [name, setName] = useState<string>("");
   const [pinCode, setPinCode] = useState<string>("");
+  const [confirmPinCode, setConfirmPinCode] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
-  const [adminExists, setAdminExists] = useState<boolean>(false);
 
   useEffect(() => {
-    checkAdminExists();
+    fetchShops();
   }, []);
 
-  const checkAdminExists = async () => {
+  const fetchShops = async () => {
     try {
       const { data, error } = await supabase
-        .from("staff")
-        .select("id")
-        .eq("is_admin", true)
-        .limit(1);
+        .from("shops")
+        .select("id, name")
+        .order("name", { ascending: true });
 
       if (error) {
-        console.error("관리자 확인 오류:", error);
-      } else if (data && data.length > 0) {
-        setAdminExists(true);
+        console.error("화원 목록 조회 오류:", error);
+      } else if (data) {
+        setShops(data);
+        if (!selectedShopId && data.length > 0) {
+          setSelectedShopId(shopIdParam || data[0].id);
+        }
       }
     } catch (err) {
       console.error("예외 발생:", err);
@@ -41,6 +53,11 @@ export default function AdminSetupPage() {
     e.preventDefault();
     setErrorMsg("");
 
+    if (!selectedShopId) {
+      setErrorMsg("화원을 선택해주세요.");
+      return;
+    }
+
     if (!name.trim()) {
       setErrorMsg("관리자 이름을 입력해주세요.");
       return;
@@ -51,11 +68,28 @@ export default function AdminSetupPage() {
       return;
     }
 
-    setLoading(true);
+    if (pinCode !== confirmPinCode) {
+      setErrorMsg("PIN 번호가 일치하지 않습니다. (비밀번호 확인 불일치)");
+      return;
+    }
 
+    // 중복 관리자 확인
     try {
+      const { data: existingAdmin } = await supabase
+        .from("staff")
+        .select("id")
+        .eq("shop_id", selectedShopId)
+        .eq("is_admin", true)
+        .single();
+
+      if (existingAdmin) {
+        setErrorMsg("해당 화원에는 이미 관리자가 존재합니다. (중복 등록 방지)");
+        return;
+      }
+
       const { error } = await supabase.from("staff").insert([
         {
+          shop_id: selectedShopId,
           name: name.trim(),
           pin_code: pinCode,
           hourly_wage: 0,
@@ -67,15 +101,14 @@ export default function AdminSetupPage() {
       if (error) {
         console.error("관리자 등록 오류:", error);
         setErrorMsg("관리자 등록 중 오류가 발생했습니다.");
-        setLoading(false);
         return;
       }
 
+      alert("화원별 관리자 설정이 완료되었습니다.");
       router.push("/");
     } catch (err) {
       console.error("예외 발생:", err);
       setErrorMsg("관리자 등록 처리 중 오류가 발생했습니다.");
-      setLoading(false);
     }
   };
 
@@ -83,30 +116,35 @@ export default function AdminSetupPage() {
     return <div className="flex flex-col flex-1 p-6 justify-center text-center">로딩 중...</div>;
   }
 
-  if (adminExists) {
-    return (
-      <div className="flex flex-col flex-1 p-6 justify-center items-center text-center">
-        <h1 className="text-xl font-bold text-primary mb-2">관리자가 이미 존재합니다</h1>
-        <p className="text-sm text-gray-600 mb-6">최초 관리자 설정은 이미 완료되었습니다.</p>
-        <Button variant="primary" onClick={() => router.push("/")}>
-          로그인 화면으로 이동
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col flex-1 p-6 justify-center">
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold text-primary mb-2">
-          최초 관리자 등록
+          화원별 최초 관리자 등록 화면
         </h1>
         <p className="text-sm text-gray-600">
-          시스템 최초 접속을 위한 관리자 계정을 생성합니다.
+          화원을 선택하고 관리자 계정 정보를 입력하세요. (PIN 2회 입력 검증)
         </p>
       </div>
 
       <form onSubmit={handleSetupAdmin} className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-textColor mb-2">
+            화원 선택
+          </label>
+          <select
+            value={selectedShopId}
+            onChange={(e) => setSelectedShopId(e.target.value)}
+            className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+          >
+            {shops.map((shop) => (
+              <option key={shop.id} value={shop.id}>
+                {shop.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-textColor mb-2">
             관리자 이름
@@ -134,6 +172,20 @@ export default function AdminSetupPage() {
           />
         </div>
 
+        <div>
+          <label className="block text-sm font-medium text-textColor mb-2">
+            4자리 PIN 번호 확인
+          </label>
+          <input
+            type="password"
+            maxLength={4}
+            value={confirmPinCode}
+            onChange={(e) => setConfirmPinCode(e.target.value)}
+            placeholder="••••"
+            className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-lg"
+          />
+        </div>
+
         {errorMsg && (
           <p className="text-sm text-errorColor text-center font-medium">
             {errorMsg}
@@ -141,9 +193,26 @@ export default function AdminSetupPage() {
         )}
 
         <Button type="submit" variant="primary">
-          관리자 등록 완료
+          등록 완료
         </Button>
+
+        <div className="text-center pt-2">
+          <a
+            href="/"
+            className="text-sm text-primary hover:underline font-medium"
+          >
+            메인 화면으로 돌아가기
+          </a>
+        </div>
       </form>
     </div>
+  );
+}
+
+export default function AdminSetupPage() {
+  return (
+    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center">로딩 중...</div>}>
+      <AdminSetupContent />
+    </Suspense>
   );
 }

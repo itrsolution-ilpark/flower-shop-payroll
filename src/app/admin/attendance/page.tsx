@@ -8,6 +8,7 @@ import Button from "@/components/Button";
 
 interface StaffUser {
   id: string;
+  shop_id: string;
   name: string;
   is_admin: boolean;
   hourly_wage: number;
@@ -16,6 +17,7 @@ interface StaffUser {
 interface Staff {
   id: string;
   name: string;
+  shop_id: string;
 }
 
 interface AttendanceRecord {
@@ -26,6 +28,7 @@ interface AttendanceRecord {
   clock_out: string | null;
   staff?: {
     name: string;
+    shop_id: string;
   };
 }
 
@@ -59,20 +62,21 @@ export default function AdminAttendancePage() {
       return;
     }
     setUser(parsedUser);
-    fetchInitialData();
+    fetchInitialData(parsedUser.shop_id);
   }, [router]);
 
   useEffect(() => {
     if (user) {
-      fetchAttendanceRecords();
+      fetchAttendanceRecords(user.shop_id);
     }
-  }, [selectedStaffId, selectedMonth]);
+  }, [selectedStaffId, selectedMonth, user]);
 
-  const fetchInitialData = async () => {
+  const fetchInitialData = async (shopId: string) => {
     try {
       const { data, error } = await supabase
         .from("staff")
-        .select("id, name")
+        .select("id, name, shop_id")
+        .eq("shop_id", shopId)
         .order("name", { ascending: true });
 
       if (error) {
@@ -80,15 +84,28 @@ export default function AdminAttendancePage() {
       } else if (data) {
         setStaffList(data);
       }
-      await fetchAttendanceRecords();
+      await fetchAttendanceRecords(shopId);
     } catch (err) {
       console.error("예외 발생:", err);
     }
   };
 
-  const fetchAttendanceRecords = async () => {
+  const fetchAttendanceRecords = async (shopId: string) => {
     setLoading(true);
     try {
+      // 해당 화원의 직원 ID들 먼저 조회
+      const { data: shopStaff } = await supabase
+        .from("staff")
+        .select("id")
+        .eq("shop_id", shopId);
+
+      const shopStaffIds = (shopStaff || []).map((s) => s.id);
+      if (shopStaffIds.length === 0) {
+        setAttendanceList([]);
+        setLoading(false);
+        return;
+      }
+
       const startDate = `${selectedMonth}-01`;
       const [year, m] = selectedMonth.split("-").map(Number);
       const lastDay = new Date(year, m, 0).getDate();
@@ -96,7 +113,8 @@ export default function AdminAttendancePage() {
 
       let query = supabase
         .from("attendance")
-        .select("*, staff:staff_id(name)")
+        .select("*, staff:staff_id(name, shop_id)")
+        .in("staff_id", shopStaffIds)
         .gte("work_date", startDate)
         .lte("work_date", endDate)
         .order("work_date", { ascending: false });
@@ -168,7 +186,7 @@ export default function AdminAttendancePage() {
 
       setSuccessMsg("근무 기록이 수정되었습니다.");
       setEditingRecord(null);
-      fetchAttendanceRecords();
+      if (user) fetchAttendanceRecords(user.shop_id);
     } catch (err) {
       console.error("예외 발생:", err);
       setErrorMsg("수정 중 오류가 발생했습니다.");
@@ -188,7 +206,7 @@ export default function AdminAttendancePage() {
       }
 
       setSuccessMsg("근무 기록이 삭제되었습니다.");
-      fetchAttendanceRecords();
+      if (user) fetchAttendanceRecords(user.shop_id);
     } catch (err) {
       console.error("예외 발생:", err);
       alert("삭제 중 오류가 발생했습니다.");
