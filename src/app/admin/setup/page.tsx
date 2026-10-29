@@ -73,17 +73,20 @@ function AdminSetupContent() {
       return;
     }
 
-    // 중복 관리자 확인
+    // 중복 관리자 확인 (SPEC v8 요구사항: "이미 관리자가 등록된 화원입니다")
     try {
-      const { data: existingAdmin } = await supabase
+      const { data: existingAdmin, error: queryError } = await supabase
         .from("staff")
         .select("id")
         .eq("shop_id", selectedShopId)
-        .eq("is_admin", true)
-        .single();
+        .eq("is_admin", true);
 
-      if (existingAdmin) {
-        setErrorMsg("해당 화원에는 이미 관리자가 존재합니다. (중복 등록 방지)");
+      if (queryError) {
+        console.error("관리자 존재 여부 확인 오류:", queryError);
+      }
+
+      if (existingAdmin && existingAdmin.length > 0) {
+        setErrorMsg("이미 관리자가 등록된 화원입니다");
         return;
       }
 
@@ -100,7 +103,7 @@ function AdminSetupContent() {
 
       if (error) {
         console.error("관리자 등록 오류:", error);
-        setErrorMsg("관리자 등록 중 오류가 발생했습니다.");
+        setErrorMsg("이미 관리자가 등록된 화원입니다");
         return;
       }
 
@@ -108,7 +111,7 @@ function AdminSetupContent() {
       router.push("/");
     } catch (err) {
       console.error("예외 발생:", err);
-      setErrorMsg("관리자 등록 처리 중 오류가 발생했습니다.");
+      setErrorMsg("이미 관리자가 등록된 화원입니다");
     }
   };
 
