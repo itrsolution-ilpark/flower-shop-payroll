@@ -1,20 +1,18 @@
 import { describe, it, expect } from 'vitest'
+import { validatePin } from '../src/lib/utils'
 
 describe('로그인 및 PIN 번호 검증 로직 테스트', () => {
-  it('4자리 PIN 번호 유효성 검증', () => {
-    const validatePin = (pin: string) => {
-      return pin.length === 4 && !isNaN(Number(pin))
-    }
-
+  it('4자리 PIN 번호 정규식 유효성 검증', () => {
     expect(validatePin('1234')).toBe(true)
+    expect(validatePin('0000')).toBe(true)
     expect(validatePin('123')).toBe(false)
     expect(validatePin('12345')).toBe(false)
     expect(validatePin('abcd')).toBe(false)
   })
 
-  it('PIN 번호 2회 입력 검증 (Validation) 테스트', () => {
+  it('PIN 번호 2회 입력 검증 (비밀번호 확인 일치)', () => {
     const validateConfirmPin = (pin: string, confirm: string) => {
-      return pin === confirm && pin.length === 4
+      return validatePin(pin) && pin === confirm
     }
 
     expect(validateConfirmPin('1234', '1234')).toBe(true)
@@ -47,7 +45,7 @@ describe('로그인 및 PIN 번호 검증 로직 테스트', () => {
         return { success: false, error: 'PIN 번호가 일치하지 않습니다.' }
       }
       if (!staff.is_admin && staff.status !== 'active') {
-        return { success: false, error: '승인 대기 중이거나 퇴사한 직원은 로그인할 수 없습니다.' }
+        return { success: false, error: '대표의 승인이 필요한 계정입니다' }
       }
       return { success: true, user: staff }
     }
@@ -58,6 +56,6 @@ describe('로그인 및 PIN 번호 검증 로직 테스트', () => {
 
     const pendingRes = loginAttempt(mockStaffPending, '1111')
     expect(pendingRes.success).toBe(false)
-    expect(pendingRes.error).toContain('승인 대기')
+    expect(pendingRes.error).toContain('대표의 승인이 필요한 계정입니다')
   })
 })

@@ -4,8 +4,8 @@
 
 @layer base {
   body {
-    background-color: #F1F8E9;
-    color: #212121;
+    background-color: #F8FAFC;
+    color: #0F172A;
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
   }
 }

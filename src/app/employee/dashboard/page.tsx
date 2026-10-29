@@ -2,13 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabaseClient";
 import Navbar from "@/components/Navbar";
-import Button from "@/components/Button";
+import Button from "@/components/ui/Button";
+import { calculateMinutes, formatMinutesToHoursAndMinutes, calculateSalary } from "@/lib/utils";
 
 interface StaffUser {
   id: string;
   name: string;
+  shop_id: string;
   is_admin: boolean;
   hourly_wage: number;
 }
@@ -18,6 +20,7 @@ interface AttendanceRecord {
   work_date: string;
   clock_in: string;
   clock_out: string | null;
+  total_minutes: number;
 }
 
 export default function EmployeeDashboardPage() {
@@ -25,51 +28,64 @@ export default function EmployeeDashboardPage() {
   const [user, setUser] = useState<StaffUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const [workDate, setWorkDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
-  const [clockIn, setClockIn] = useState<string>("09:00");
-  const [clockOut, setClockOut] = useState<string>("18:00");
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const [successMsg, setSuccessMsg] = useState<string>("");
+  // 당일 출퇴근 상태
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [message, setMessage] = useState<string>("");
 
-  const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7) // YYYY-MM
-  );
+  // 최근 30일 내역
+  const [recentRecords, setRecentRecords] = useState<AttendanceRecord[]>([]);
+
+  // PIN 변경 모달
+  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+  const [newPin, setNewPin] = useState<string>("");
+  const [confirmNewPin, setConfirmNewPin] = useState<string>("");
+  const [pinError, setPinError] = useState<string>("");
 
   useEffect(() => {
-    const rawUser = localStorage.getItem("flower_shop_user");
-    if (!rawUser) {
+    const raw = localStorage.getItem("flower_shop_user");
+    if (!raw) {
       router.push("/");
       return;
     }
-    const parsedUser: StaffUser = JSON.parse(rawUser);
-    setUser(parsedUser);
-    fetchAttendance(parsedUser.id, selectedMonth);
-  }, [selectedMonth, router]);
+    const parsed: StaffUser = JSON.parse(raw);
+    setUser(parsed);
+    fetchEmployeeData(parsed.id);
+  }, [router]);
 
-  const fetchAttendance = async (staffId: string, month: string) => {
+  const fetchEmployeeData = async (staffId: string) => {
     setLoading(true);
     try {
-      const startDate = `${month}-01`;
-      const [year, m] = month.split("-").map(Number);
-      const lastDay = new Date(year, m, 0).getDate();
-      const endDate = `${month}-${lastDay}`;
+      // 최신 시급 재확인
+      const { data: currentStaff } = await supabase
+        .from("staff")
+        .select("hourly_wage")
+        .eq("id", staffId)
+        .single();
 
-      const { data, error } = await supabase
+      if (currentStaff) {
+        setUser((prev) => (prev ? { ...prev, hourly_wage: currentStaff.hourly_wage } : prev));
+      }
+
+      // 최근 30일 기록
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const startDate = thirtyDaysAgo.toISOString().split("T")[0];
+
+      const { data: records } = await supabase
         .from("attendance")
         .select("*")
         .eq("staff_id", staffId)
         .gte("work_date", startDate)
-        .lte("work_date", endDate)
         .order("work_date", { ascending: false });
 
-      if (error) {
-        console.error("출퇴근 기록 조회 오류:", error);
-      } else if (data) {
-        setAttendanceList(data);
-      }
+      const list = (records || []) as AttendanceRecord[];
+      setRecentRecords(list);
+
+      // 당일 기록
+      const today = list.find((r) => r.work_date === todayStr);
+      setTodayRecord(today || null);
     } catch (err) {
       console.error("예외 발생:", err);
     } finally {
@@ -77,220 +93,254 @@ export default function EmployeeDashboardPage() {
     }
   };
 
-  const handleAttendanceSubmit = async (e: React.FormEvent) => {
+  const getNowHHmm = (): string => {
+    const now = new Date();
+    const h = now.getHours().toString().padStart(2, "0");
+    const m = now.getMinutes().toString().padStart(2, "0");
+    return `${h}:${m}`;
+  };
+
+  const handleClockIn = async () => {
+    if (!user) return;
+    setActionLoading(true);
+    setMessage("");
+
+    const nowTime = getNowHHmm();
+    try {
+      const { data, error } = await supabase
+        .from("attendance")
+        .insert([
+          {
+            staff_id: user.id,
+            work_date: todayStr,
+            clock_in: nowTime,
+            clock_out: null,
+            total_minutes: 0,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        setMessage("출근 등록 중 오류가 발생했습니다.");
+      } else if (data) {
+        setTodayRecord(data as AttendanceRecord);
+        setMessage(`출근 등록 완료 (${nowTime})`);
+        fetchEmployeeData(user.id);
+      }
+    } catch (err) {
+      console.error("예외 발생:", err);
+      setMessage("출근 처리 중 오류가 발생했습니다.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClockOut = async () => {
+    if (!user || !todayRecord) return;
+    setActionLoading(true);
+    setMessage("");
+
+    const nowTime = getNowHHmm();
+    const minutes = calculateMinutes(todayRecord.clock_in, nowTime);
+
+    try {
+      const { data, error } = await supabase
+        .from("attendance")
+        .update({
+          clock_out: nowTime,
+          total_minutes: minutes,
+        })
+        .eq("id", todayRecord.id)
+        .select()
+        .single();
+
+      if (error) {
+        setMessage("퇴근 등록 중 오류가 발생했습니다.");
+      } else if (data) {
+        setTodayRecord(data as AttendanceRecord);
+        setMessage(`퇴근 등록 완료 (${nowTime})`);
+        fetchEmployeeData(user.id);
+      }
+    } catch (err) {
+      console.error("예외 발생:", err);
+      setMessage("퇴근 처리 중 오류가 발생했습니다.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleChangePin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg("");
-    setSuccessMsg("");
+    setPinError("");
 
     if (!user) return;
 
-    if (!workDate || !clockIn) {
-      setErrorMsg("근무 일자와 출근 시간은 필수입니다.");
+    if (!/^[0-9]{4}$/.test(newPin)) {
+      setPinError("새 PIN 번호는 4자리 숫자여야 합니다.");
       return;
     }
 
-    if (clockOut && clockIn > clockOut) {
-      setErrorMsg("퇴근 시간은 출근 시간보다 빠를 수 없습니다.");
+    if (newPin !== confirmNewPin) {
+      setPinError("비밀번호 확인이 일치하지 않습니다.");
       return;
     }
 
     try {
-      const { data: existing } = await supabase
-        .from("attendance")
-        .select("id")
-        .eq("staff_id", user.id)
-        .eq("work_date", workDate)
-        .single();
-
-      let error;
-      if (existing) {
-        const res = await supabase
-          .from("attendance")
-          .update({
-            clock_in: clockIn,
-            clock_out: clockOut || null,
-          })
-          .eq("id", existing.id);
-        error = res.error;
-      } else {
-        const res = await supabase.from("attendance").insert([
-          {
-            staff_id: user.id,
-            work_date: workDate,
-            clock_in: clockIn,
-            clock_out: clockOut || null,
-          },
-        ]);
-        error = res.error;
-      }
+      const { error } = await supabase
+        .from("staff")
+        .update({ pin_code: newPin })
+        .eq("id", user.id);
 
       if (error) {
-        console.error("출퇴근 저장 오류:", error);
-        setErrorMsg("출퇴근 기록 저장 중 오류가 발생했습니다.");
+        setPinError("PIN 변경 중 오류가 발생했습니다.");
         return;
       }
 
-      setSuccessMsg("출퇴근 기록이 성공적으로 저장되었습니다.");
-      fetchAttendance(user.id, selectedMonth);
+      alert("PIN 번호가 성공적으로 변경되었습니다.");
+      setIsPinModalOpen(false);
+      setNewPin("");
+      setConfirmNewPin("");
     } catch (err) {
       console.error("예외 발생:", err);
-      setErrorMsg("저장 중 오류가 발생했습니다.");
+      setPinError("처리 중 오류가 발생했습니다.");
     }
   };
 
-  const calculateWorkHours = (inTime: string, outTime: string | null) => {
-    if (!outTime) return 0;
-    const [inH, inM] = inTime.split(":").map(Number);
-    const [outH, outM] = outTime.split(":").map(Number);
-
-    const inMinutes = inH * 60 + inM;
-    const outMinutes = outH * 60 + outM;
-
-    const diffMinutes = outMinutes - inMinutes;
-    if (diffMinutes <= 0) return 0;
-
-    return diffMinutes / 60;
-  };
-
-  const totalMonthlyHours = attendanceList.reduce((acc, cur) => {
-    return acc + calculateWorkHours(cur.clock_in, cur.clock_out);
-  }, 0);
-
-  const estimatedPay = Math.round(
-    totalMonthlyHours * (user?.hourly_wage || 0)
-  );
-
   if (!user) return null;
+
+  // 이번 달 (YYYY-MM) 근무 요약
+  const currentMonthPrefix = todayStr.slice(0, 7);
+  const thisMonthRecords = recentRecords.filter(
+    (r) => r.work_date.startsWith(currentMonthPrefix) && r.clock_out
+  );
+  const totalMonthlyMinutes = thisMonthRecords.reduce((acc, cur) => {
+    return acc + (cur.total_minutes || calculateMinutes(cur.clock_in, cur.clock_out));
+  }, 0);
+  const estimatedPay = calculateSalary(totalMonthlyMinutes, user.hourly_wage);
 
   return (
     <div className="flex flex-col flex-1">
       <Navbar title="직원 마이페이지" />
 
-      <div className="p-4 flex-1 space-y-6">
-        <div className="bg-background p-4 rounded-lg border border-secondary flex justify-between items-center">
+      <div className="p-4 flex-1 space-y-5">
+        {/* 상단: 직원 이름, 시급 안내 */}
+        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-textColor">
-              환영합니다, <span className="text-primary">{user.name}</span>님!
-            </p>
-            <p className="text-xs text-gray-600 mt-1">
-              현재 시급: {user.hourly_wage.toLocaleString()}원
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500">이번 달 예상 급여</p>
-            <p className="text-lg font-bold text-primary">
-              {estimatedPay.toLocaleString()}원
-            </p>
-            <p className="text-xs text-gray-500">
-              총 근무: {totalMonthlyHours.toFixed(1)}시간
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-          <h2 className="text-md font-bold text-textColor mb-3">
-            출퇴근 시간 등록 / 수정
-          </h2>
-          <form onSubmit={handleAttendanceSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-textColor mb-1">
-                근무 일자
-              </label>
-              <input
-                type="date"
-                value={workDate}
-                onChange={(e) => setWorkDate(e.target.value)}
-                className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm bg-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-medium text-textColor mb-1">
-                  출근 시간
-                </label>
-                <input
-                  type="time"
-                  value={clockIn}
-                  onChange={(e) => setClockIn(e.target.value)}
-                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-textColor mb-1">
-                  퇴근 시간
-                </label>
-                <input
-                  type="time"
-                  value={clockOut}
-                  onChange={(e) => setClockOut(e.target.value)}
-                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm bg-white"
-                />
-              </div>
-            </div>
-
-            {errorMsg && (
-              <p className="text-xs text-errorColor font-medium">{errorMsg}</p>
-            )}
-            {successMsg && (
-              <p className="text-xs text-primary font-medium">{successMsg}</p>
-            )}
-
-            <Button type="submit" variant="primary">
-              저장하기
-            </Button>
-          </form>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="text-md font-bold text-textColor">
-              이번 달 근무 내역
+            <h2 className="text-base font-bold text-textColor">
+              {user.name} 님
             </h2>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="h-8 px-2 border border-gray-300 rounded text-xs bg-white"
-            />
+            <p className="text-xs text-gray-600 mt-0.5">
+              시급: {user.hourly_wage.toLocaleString()}원
+            </p>
+          </div>
+          <button
+            onClick={() => setIsPinModalOpen(true)}
+            className="px-2.5 py-1.5 border border-gray-300 rounded text-xs text-gray-700 hover:bg-gray-50"
+          >
+            [PIN 번호 변경]
+          </button>
+        </div>
+
+        {/* 당일 출퇴근 카드: [출근하기] / [퇴근하기] 원클릭 버튼 및 실시간 상태 표시 */}
+        <section className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-textColor">당일 출퇴근 카드</h3>
+            <span className="text-xs text-gray-500">{todayStr}</span>
           </div>
 
+          <div className="p-3 bg-slate-50 rounded-lg text-center space-y-1">
+            <p className="text-xs text-gray-500">현재 상태</p>
+            {!todayRecord ? (
+              <p className="text-sm font-bold text-gray-600">출근 전</p>
+            ) : !todayRecord.clock_out ? (
+              <p className="text-sm font-bold text-emerald">
+                근무 중 (출근 {todayRecord.clock_in.slice(0, 5)})
+              </p>
+            ) : (
+              <p className="text-sm font-bold text-primary">
+                퇴근 완료 ({todayRecord.clock_in.slice(0, 5)} ~ {todayRecord.clock_out.slice(0, 5)})
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="secondary"
+              onClick={handleClockIn}
+              disabled={actionLoading || !!todayRecord}
+            >
+              [출근하기]
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleClockOut}
+              disabled={actionLoading || !todayRecord || !!todayRecord.clock_out}
+            >
+              [퇴근하기]
+            </Button>
+          </div>
+
+          {message && (
+            <p className="text-xs text-center font-medium text-emerald">{message}</p>
+          )}
+        </section>
+
+        {/* 이번 달 근무 요약: 총 근무 시간 (00시간 00분), 총 예상 급여 (원 단위 포맷팅) */}
+        <section className="bg-gradient-to-br from-blue-900 to-indigo-900 text-white p-5 rounded-lg shadow-sm space-y-3">
+          <h3 className="text-xs font-semibold text-blue-200">이번 달 근무 요약</h3>
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-xs text-blue-200">총 근무 시간</p>
+              <p className="text-lg font-bold">
+                {formatMinutesToHoursAndMinutes(totalMonthlyMinutes)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-blue-200">총 예상 급여</p>
+              <p className="text-xl font-extrabold text-amber-300">
+                {estimatedPay.toLocaleString()}원
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* 하단: 최근 30일 출퇴근 일자/시간 테이블 */}
+        <section className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-3 border-b bg-slate-50 font-bold text-xs text-textColor">
+            최근 30일 출퇴근 일자/시간 테이블
+          </div>
           {loading ? (
-            <p className="text-center py-4 text-xs text-gray-500">로딩 중...</p>
-          ) : attendanceList.length === 0 ? (
-            <p className="text-center py-4 text-xs text-gray-500">
-              기록된 근무 내역이 없습니다.
-            </p>
+            <p className="text-xs text-center py-6 text-gray-500">로딩 중...</p>
+          ) : recentRecords.length === 0 ? (
+            <p className="text-xs text-center py-6 text-gray-400">기록된 출퇴근 내역이 없습니다.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 text-gray-600">
-                    <th className="py-2 px-1">날짜</th>
-                    <th className="py-2 px-1">출근</th>
-                    <th className="py-2 px-1">퇴근</th>
-                    <th className="py-2 px-1 text-right">근무시간</th>
+                  <tr className="bg-slate-100 text-gray-700">
+                    <th className="p-2.5 font-semibold">일자</th>
+                    <th className="p-2.5 font-semibold">출근</th>
+                    <th className="p-2.5 font-semibold">퇴근</th>
+                    <th className="p-2.5 font-semibold text-right">근무시간</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {attendanceList.map((item) => {
-                    const hrs = calculateWorkHours(
-                      item.clock_in,
-                      item.clock_out
-                    );
+                  {recentRecords.map((r) => {
+                    const mins = r.clock_out
+                      ? r.total_minutes || calculateMinutes(r.clock_in, r.clock_out)
+                      : 0;
                     return (
-                      <tr key={item.id}>
-                        <td className="py-2 px-1 font-medium text-textColor">
-                          {item.work_date}
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-medium">{r.work_date}</td>
+                        <td className="p-2.5">{r.clock_in ? r.clock_in.slice(0, 5) : "-"}</td>
+                        <td className="p-2.5">
+                          {r.clock_out ? r.clock_out.slice(0, 5) : (
+                            <span className="text-emerald font-semibold">근무 중</span>
+                          )}
                         </td>
-                        <td className="py-2 px-1 text-gray-600">
-                          {item.clock_in.slice(0, 5)}
-                        </td>
-                        <td className="py-2 px-1 text-gray-600">
-                          {item.clock_out ? item.clock_out.slice(0, 5) : "-"}
-                        </td>
-                        <td className="py-2 px-1 text-right font-semibold text-primary">
-                          {hrs > 0 ? `${hrs.toFixed(1)}시간` : "-"}
+                        <td className="p-2.5 text-right font-medium">
+                          {r.clock_out ? formatMinutesToHoursAndMinutes(mins) : "-"}
                         </td>
                       </tr>
                     );
@@ -299,8 +349,67 @@ export default function EmployeeDashboardPage() {
               </table>
             </div>
           )}
-        </div>
+        </section>
       </div>
+
+      {/* [PIN 번호 변경] 모달 */}
+      {isPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm bg-white rounded-lg p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-textColor">PIN 번호 변경</h3>
+            <form onSubmit={handleChangePin} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-textColor mb-1">
+                  새 4자리 PIN
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="••••"
+                  className="w-full h-10 px-3 border border-gray-300 rounded text-center tracking-widest text-base font-bold bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-textColor mb-1">
+                  새 PIN 확인
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={confirmNewPin}
+                  onChange={(e) => setConfirmNewPin(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="••••"
+                  className="w-full h-10 px-3 border border-gray-300 rounded text-center tracking-widest text-base font-bold bg-white"
+                />
+              </div>
+
+              {pinError && (
+                <p className="text-xs text-errorColor text-center font-medium">
+                  {pinError}
+                </p>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsPinModalOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button type="submit" variant="primary">
+                  변경 저장
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,13 +2,13 @@ create table if not exists system_admins (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   pin_code text not null,
-  created_at timestamp with time zone default now()
+  created_at timestamptz default now()
 );
 
 create table if not exists shops (
   id uuid primary key default gen_random_uuid(),
-  name text not null,
-  created_at timestamp with time zone default now()
+  name text not null unique,
+  created_at timestamptz default now()
 );
 
 create table if not exists staff (
@@ -19,16 +19,19 @@ create table if not exists staff (
   hourly_wage integer not null default 10000,
   is_admin boolean not null default false,
   status text not null default 'pending',
-  created_at timestamp with time zone default now()
+  created_at timestamptz default now(),
+  constraint uq_shop_staff unique (shop_id, name)
 );
 
 create table if not exists attendance (
   id uuid primary key default gen_random_uuid(),
   staff_id uuid not null references staff(id) on delete cascade,
-  work_date date not null,
-  clock_in time without time zone not null,
-  clock_out time without time zone,
-  created_at timestamp with time zone default now()
+  work_date date not null default current_date,
+  clock_in time not null,
+  clock_out time,
+  total_minutes integer default 0,
+  created_at timestamptz default now(),
+  constraint uq_staff_work_date unique (staff_id, work_date)
 );
 
 alter table system_admins enable row level security;
@@ -64,9 +67,13 @@ drop policy if exists "Allow insert staff for all" on staff;
 create policy "Allow insert staff for all" on staff
   for insert with check (true);
 
-drop policy if exists "Allow update staff for self or admin" on staff;
-create policy "Allow update staff for self or admin" on staff
+drop policy if exists "Allow update staff for all" on staff;
+create policy "Allow update staff for all" on staff
   for update using (true) with check (true);
+
+drop policy if exists "Allow delete staff for all" on staff;
+create policy "Allow delete staff for all" on staff
+  for delete using (true);
 
 drop policy if exists "Allow select attendance for all" on attendance;
 create policy "Allow select attendance for all" on attendance

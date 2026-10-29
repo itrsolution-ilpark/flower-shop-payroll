@@ -2,15 +2,10 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-import Button from "@/components/Button";
+import { supabase } from "@/lib/supabaseClient";
+import Button from "@/components/ui/Button";
 
-interface Shop {
-  id: string;
-  name: string;
-}
-
-interface ExistingAdmin {
+interface StaffAdmin {
   id: string;
   name: string;
   pin_code: string;
@@ -19,81 +14,59 @@ interface ExistingAdmin {
 function AdminSetupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const shopIdParam = searchParams.get("shop_id");
+  const shopId = searchParams.get("shop_id");
 
-  const [shops, setShops] = useState<Shop[]>([]);
-  const [selectedShopId, setSelectedShopId] = useState<string>(shopIdParam || "");
-  const [selectedShopName, setSelectedShopName] = useState<string>("");
-  
+  const [shopName, setShopName] = useState<string>("");
   const [name, setName] = useState<string>("");
   const [pinCode, setPinCode] = useState<string>("");
   const [confirmPinCode, setConfirmPinCode] = useState<string>("");
-  
-  const [existingAdmin, setExistingAdmin] = useState<ExistingAdmin | null>(null);
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
 
+  const [existingAdmin, setExistingAdmin] = useState<StaffAdmin | null>(null);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchShopsAndAdmin(shopIdParam);
-  }, [shopIdParam]);
+    if (!shopId) {
+      alert("플라워샵을 먼저 선택해주세요.");
+      router.push("/");
+      return;
+    }
+    fetchShopAndAdmin(shopId);
+  }, [shopId, router]);
 
-  const fetchShopsAndAdmin = async (targetShopId?: string | null) => {
+  const fetchShopAndAdmin = async (targetShopId: string) => {
     setLoading(true);
     try {
       const { data: shopData, error: shopError } = await supabase
         .from("shops")
         .select("id, name")
-        .order("name", { ascending: true });
+        .eq("id", targetShopId)
+        .single();
 
-      if (shopError) {
-        console.error("플라워샵 목록 조회 오류:", shopError);
-      } else if (shopData && shopData.length > 0) {
-        setShops(shopData);
-        
-        let activeId = targetShopId;
-        if (!activeId || !shopData.some(s => s.id === activeId)) {
-          activeId = shopData[0].id;
-        }
-        
-        const validActiveId = activeId as string;
-        setSelectedShopId(validActiveId);
-        const currentShop = shopData.find(s => s.id === validActiveId);
-        if (currentShop) {
-          setSelectedShopName(currentShop.name);
-        }
-
-        await checkAdminForShop(validActiveId);
+      if (shopError || !shopData) {
+        console.error("플라워샵 조회 실패:", shopError);
+        router.push("/");
+        return;
       }
-    } catch (err) {
-      console.error("예외 발생:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      setShopName(shopData.name);
 
-  const checkAdminForShop = async (shopId: string) => {
-    try {
-      // 정확히 해당 shop_id에 속한 is_admin=true 인 레코드만 조회
-      const { data, error } = await supabase
+      // 버그 원천 해결: 타 매장과 무관하게 정확히 현재 shop_id 기준 WHERE shop_id = :shopId AND is_admin = true
+      const { data: adminData } = await supabase
         .from("staff")
-        .select("id, name, pin_code")
-        .eq("shop_id", shopId)
+        .select("id, name, pin_code, is_admin, hourly_wage, status")
+        .eq("shop_id", targetShopId)
         .eq("is_admin", true)
+        .limit(1)
         .maybeSingle();
 
-      if (error) {
-        console.error("관리자 조회 오류:", error);
-      }
-
-      if (data) {
-        setExistingAdmin(data);
+      if (adminData) {
+        setExistingAdmin(adminData);
         setIsEditMode(true);
-        setName(data.name);
-        setPinCode(data.pin_code);
-        setConfirmPinCode(data.pin_code);
+        setName(adminData.name);
+        setPinCode(adminData.pin_code);
+        setConfirmPinCode(adminData.pin_code);
       } else {
         setExistingAdmin(null);
         setIsEditMode(false);
@@ -103,84 +76,71 @@ function AdminSetupContent() {
       }
     } catch (err) {
       console.error("예외 발생:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleShopChange = async (newShopId: string) => {
-    setSelectedShopId(newShopId);
-    const found = shops.find(s => s.id === newShopId);
-    if (found) {
-      setSelectedShopName(found.name);
-    }
-    setErrorMsg("");
-    setSuccessMsg("");
-    await checkAdminForShop(newShopId);
-  };
-
-  const handleSetupAdmin = async (e: React.FormEvent) => {
+  const handleSaveAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
     setSuccessMsg("");
 
-    if (!selectedShopId) {
-      setErrorMsg("플라워샵을 선택해주세요.");
-      return;
-    }
+    if (!shopId) return;
 
     if (!name.trim()) {
-      setErrorMsg("관리자 이름을 입력해주세요.");
+      setErrorMsg("대표 이름을 입력해주세요.");
       return;
     }
 
-    if (!pinCode || pinCode.length !== 4 || isNaN(Number(pinCode))) {
+    if (!/^[0-9]{4}$/.test(pinCode)) {
       setErrorMsg("4자리 PIN 번호를 정확히 숫자로 입력해주세요.");
       return;
     }
 
     if (pinCode !== confirmPinCode) {
-      setErrorMsg("PIN 번호가 일치하지 않습니다. (비밀번호 확인 불일치)");
+      setErrorMsg("PIN 확인이 일치하지 않습니다.");
       return;
     }
 
     try {
       if (isEditMode && existingAdmin) {
-        // 수정 모드
         const { error } = await supabase
           .from("staff")
           .update({
             name: name.trim(),
             pin_code: pinCode,
-            is_admin: true,
             status: "active",
           })
           .eq("id", existingAdmin.id);
 
         if (error) {
-          console.error("관리자 수정 오류:", error);
-          setErrorMsg("관리자 정보 수정 중 오류가 발생했습니다.");
+          console.error("수정 오류:", error);
+          setErrorMsg("대표 정보 수정 중 오류가 발생했습니다.");
           return;
         }
 
-        setSuccessMsg("관리자 정보가 성공적으로 수정되었습니다.");
+        setSuccessMsg("대표 정보가 성공적으로 수정되었습니다.");
         setTimeout(() => {
-          router.push("/");
-        }, 1000);
+          router.push(`/shop/${shopId}`);
+        }, 800);
       } else {
-        // 신규 등록 모드: 정확히 해당 shop_id에 속한 is_admin=true 계정 존재 여부만 체크
-        const { data: existingCheck } = await supabase
+        // 등록 모드: 엄격히 현재 shop_id 기준 존재 여부만 체크
+        const { data: checkData } = await supabase
           .from("staff")
           .select("id")
-          .eq("shop_id", selectedShopId)
-          .eq("is_admin", true);
+          .eq("shop_id", shopId)
+          .eq("is_admin", true)
+          .limit(1);
 
-        if (existingCheck && existingCheck.length > 0) {
+        if (checkData && checkData.length > 0) {
           setErrorMsg("이미 해당 플라워샵에 관리자가 존재합니다.");
           return;
         }
 
         const { error } = await supabase.from("staff").insert([
           {
-            shop_id: selectedShopId,
+            shop_id: shopId,
             name: name.trim(),
             pin_code: pinCode,
             hourly_wage: 0,
@@ -190,13 +150,13 @@ function AdminSetupContent() {
         ]);
 
         if (error) {
-          console.error("관리자 등록 오류:", error);
-          setErrorMsg("이미 해당 플라워샵에 관리자가 존재합니다.");
+          console.error("등록 오류:", error);
+          setErrorMsg("관리자 등록 중 오류가 발생했습니다.");
           return;
         }
 
-        alert("플라워샵별 관리자 설정이 완료되었습니다.");
-        router.push("/");
+        alert("플라워샵 대표가 등록되었습니다. 허브 화면으로 이동합니다.");
+        router.push(`/shop/${shopId}`);
       }
     } catch (err) {
       console.error("예외 발생:", err);
@@ -205,109 +165,108 @@ function AdminSetupContent() {
   };
 
   if (loading) {
-    return <div className="flex flex-col flex-1 p-6 justify-center text-center">로딩 중...</div>;
+    return <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-gray-500">로딩 중...</div>;
   }
+
+  const isFormValid =
+    name.trim().length > 0 &&
+    /^[0-9]{4}$/.test(pinCode) &&
+    pinCode === confirmPinCode;
 
   return (
     <div className="flex flex-col flex-1 p-6 justify-center">
-      <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold text-primary mb-2">
+      <div className="text-center mb-6">
+        <h1 className="text-xl font-bold text-primary mb-1">
           플라워샵별 관리자 등록 화면
         </h1>
-        <p className="text-sm text-gray-600">
+        <p className="text-xs text-gray-600">
           {isEditMode
-            ? "이미 등록된 관리자 내역입니다. 정보를 수정할 수 있습니다."
-            : "선택된 플라워샵의 최초 관리자 계정을 등록합니다. (PIN 2회 입력 검증)"}
+            ? "기존 대표 정보 수정 모드"
+            : "신규 대표 관리자 등록 모드 (PIN 2회 입력 검증)"}
         </p>
       </div>
 
-      <form onSubmit={handleSetupAdmin} className="space-y-6">
+      <form onSubmit={handleSaveAdmin} className="space-y-4 bg-white p-6 border border-gray-200 rounded-lg shadow-sm">
         <div>
-          <label className="block text-sm font-medium text-textColor mb-2">
-            샵 고정 표시
+          <label className="block text-xs font-semibold text-textColor mb-1">
+            플라워샵명
           </label>
-          <div className="flex items-center">
-            <select
-              value={selectedShopId}
-              onChange={(e) => handleShopChange(e.target.value)}
-              disabled={true}
-              className="w-full h-12 px-3 border border-gray-300 rounded-lg bg-gray-100 text-textColor font-semibold cursor-not-allowed"
-            >
-              {shops.map((shop) => (
-                <option key={shop.id} value={shop.id}>
-                  {shop.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            * 초기 화면에서 선택한 플라워샵이 고정되어 있습니다.
-          </p>
+          <input
+            type="text"
+            value={shopName}
+            disabled
+            className="w-full h-11 px-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold cursor-not-allowed"
+          />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-textColor mb-2">
-            관리자 이름
+          <label className="block text-xs font-semibold text-textColor mb-1">
+            대표 이름
           </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="점장님"
-            className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            placeholder="대표 관리자 이름"
+            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-textColor mb-2">
-            4자리 PIN 번호
+          <label className="block text-xs font-semibold text-textColor mb-1">
+            4자리 PIN
           </label>
           <input
             type="password"
+            inputMode="numeric"
             maxLength={4}
             value={pinCode}
-            onChange={(e) => setPinCode(e.target.value)}
+            onChange={(e) => setPinCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="••••"
-            className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-lg bg-white"
+            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-textColor mb-2">
-            4자리 PIN 번호 확인
+          <label className="block text-xs font-semibold text-textColor mb-1">
+            PIN 확인
           </label>
           <input
             type="password"
+            inputMode="numeric"
             maxLength={4}
             value={confirmPinCode}
-            onChange={(e) => setConfirmPinCode(e.target.value)}
+            onChange={(e) => setConfirmPinCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="••••"
-            className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-lg bg-white"
+            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         {errorMsg && (
-          <p className="text-sm text-errorColor text-center font-medium">
+          <p className="text-xs text-errorColor text-center font-medium">
             {errorMsg}
           </p>
         )}
-
         {successMsg && (
-          <p className="text-sm text-primary text-center font-medium">
+          <p className="text-xs text-emerald text-center font-medium">
             {successMsg}
           </p>
         )}
 
-        <Button type="submit" variant="primary">
-          {isEditMode ? "관리자 정보 수정" : "등록 완료"}
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!isFormValid}
+        >
+          {isEditMode ? "대표 정보 수정" : "대표 등록"}
         </Button>
 
         <div className="text-center pt-2">
           <a
-            href="/"
-            className="text-sm text-primary hover:underline font-medium"
+            href={`/shop/${shopId}`}
+            className="text-xs text-primary font-medium hover:underline"
           >
-            메인 화면으로 돌아가기
+            플라워샵 허브로 돌아가기
           </a>
         </div>
       </form>
@@ -317,7 +276,7 @@ function AdminSetupContent() {
 
 export default function AdminSetupPage() {
   return (
-    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center">로딩 중...</div>}>
+    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-gray-500">로딩 중...</div>}>
       <AdminSetupContent />
     </Suspense>
   );
