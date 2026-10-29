@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "플라워샵 근무 및 급여 관리 시스템",
-  description: "화원 직원들의 출퇴근 기록 및 월별 급여 자동 계산 프로그램",
+  title: "플라워샵 근무 관리",
+  description: "플라워샵 직원들의 출퇴근 기록 및 월별 급여 자동 계산 프로그램",
 };
 
 export default function RootLayout({

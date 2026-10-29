@@ -158,6 +158,7 @@ export default function ShopHubPage({ params }: ShopHubPageProps) {
 
   const adminStaff = staffList.filter((s) => s.is_admin);
   const employeeStaff = staffList.filter((s) => !s.is_admin);
+  const hasAdmin = adminStaff.length > 0;
 
   return (
     <div className="flex flex-col flex-1 p-6 justify-center">
@@ -172,34 +173,39 @@ export default function ShopHubPage({ params }: ShopHubPageProps) {
 
       {loginMode === "none" ? (
         <div className="space-y-4">
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (adminStaff.length === 0) {
-                router.push(`/admin/setup?shop_id=${shop.id}`);
-              } else {
-                handleOpenLogin("admin");
-              }
-            }}
-          >
-            {adminStaff.length === 0 ? "관리자 최초 등록" : "관리자 로그인"}
-          </Button>
-
-          <Button
-            variant="secondary"
-            onClick={() => handleOpenLogin("employee")}
-          >
-            직원 로그인
-          </Button>
-
-          <div className="pt-2 text-center">
-            <a
-              href={`/signup?shop_id=${shop.id}`}
-              className="text-sm text-primary hover:underline font-medium"
+          {!hasAdmin ? (
+            <Button
+              variant="primary"
+              onClick={() => router.push(`/admin/setup?shop_id=${shop.id}`)}
             >
-              직원이신가요? 회원가입 신청하기
-            </a>
-          </div>
+              관리자 등록
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="primary"
+                onClick={() => handleOpenLogin("admin")}
+              >
+                관리자 로그인
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => handleOpenLogin("employee")}
+              >
+                직원 로그인
+              </Button>
+
+              <div className="pt-2 text-center">
+                <a
+                  href={`/signup?shop_id=${shop.id}`}
+                  className="text-sm text-primary hover:underline font-medium"
+                >
+                  직원 가입
+                </a>
+              </div>
+            </>
+          )}
 
           <div className="pt-6 text-center">
             <a
