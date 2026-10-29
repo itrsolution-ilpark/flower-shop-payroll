@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Button from "@/components/ui/Button";
 
@@ -88,7 +89,7 @@ function SignupContent() {
         return;
       }
 
-      alert("대표 승인 후 이용 가능합니다");
+      alert("관리자 승인 후 이용 가능합니다");
       router.push(`/shop/${selectedShopId}`);
     } catch (err) {
       console.error("예외 발생:", err);
@@ -98,7 +99,7 @@ function SignupContent() {
   };
 
   if (loading) {
-    return <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-gray-500">로딩 중...</div>;
+    return <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-subText">로딩 중...</div>;
   }
 
   const isFormValid =
@@ -107,29 +108,20 @@ function SignupContent() {
     pinCode === confirmPinCode;
 
   return (
-    <div className="flex flex-col flex-1 p-6 justify-center">
-      <div className="text-center mb-6">
-        <h1 className="text-xl font-bold text-primary mb-1">
-          직원 회원가입 화면
-        </h1>
-        <p className="text-xs text-gray-600">
-          소속 플라워샵에 가입 신청을 진행합니다. (PIN 2회 입력 검증)
+    <div className="flex flex-col flex-1 pt-6 px-4 pb-8 space-y-5">
+      {/* 1. 상단 헤더: 매장명 표시 및 가입 신청 타이틀 */}
+      <div className="bg-white p-5 rounded-xl border border-borderLine shadow-sm">
+        <h1 className="text-base font-bold text-textColor">직원 가입 신청</h1>
+        <p className="text-xs text-subText mt-0.5">
+          매장 승인 완료 후 근무 및 급여 정산 이용이 가능합니다.
         </p>
+        <div className="mt-2.5 inline-block px-3 py-1 bg-emerald-50 text-[#059669] rounded-lg text-xs font-semibold">
+          소속 플라워샵: {shopName}
+        </div>
       </div>
 
-      <form onSubmit={handleSignup} className="space-y-4 bg-white p-6 border border-gray-200 rounded-lg shadow-sm">
-        <div>
-          <label className="block text-xs font-semibold text-textColor mb-1">
-            소속 플라워샵명
-          </label>
-          <input
-            type="text"
-            value={shopName}
-            disabled
-            className="w-full h-11 px-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold cursor-not-allowed"
-          />
-        </div>
-
+      {/* 2. 입력 폼: 직원 이름, 4자리 PIN, 4자리 PIN 확인 */}
+      <form onSubmit={handleSignup} className="space-y-4 bg-white p-6 border border-borderLine rounded-xl shadow-sm">
         <div>
           <label className="block text-xs font-semibold text-textColor mb-1">
             직원 이름
@@ -138,8 +130,8 @@ function SignupContent() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="직원 이름"
-            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="직원 이름 입력"
+            className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
           />
         </div>
 
@@ -154,13 +146,13 @@ function SignupContent() {
             value={pinCode}
             onChange={(e) => setPinCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="••••"
-            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
           />
         </div>
 
         <div>
           <label className="block text-xs font-semibold text-textColor mb-1">
-            PIN 확인
+            4자리 PIN 확인
           </label>
           <input
             type="password"
@@ -169,31 +161,34 @@ function SignupContent() {
             value={confirmPinCode}
             onChange={(e) => setConfirmPinCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="••••"
-            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
           />
         </div>
 
         {errorMsg && (
-          <p className="text-xs text-errorColor text-center font-medium">
+          <p className="text-xs text-rose-500 text-center font-medium">
             {errorMsg}
           </p>
         )}
 
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={!isFormValid || loading}
-        >
-          [가입 신청하기]
-        </Button>
-
-        <div className="text-center pt-2">
-          <a
-            href={`/shop/${selectedShopId}`}
-            className="text-xs text-primary font-medium hover:underline"
+        {/* 3. 액션 버튼: 가입 신청 완료 버튼 */}
+        <div className="pt-2">
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!isFormValid || loading}
           >
-            허브 화면으로 돌아가기
-          </a>
+            가입 신청 완료
+          </Button>
+        </div>
+
+        <div className="text-center pt-1">
+          <Link
+            href={`/shop/${selectedShopId}`}
+            className="text-xs text-[#059669] font-medium hover:underline"
+          >
+            플라워샵 메인으로 복귀
+          </Link>
         </div>
       </form>
     </div>
@@ -202,7 +197,7 @@ function SignupContent() {
 
 export default function SignupPage() {
   return (
-    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-gray-500">로딩 중...</div>}>
+    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-subText">로딩 중...</div>}>
       <SignupContent />
     </Suspense>
   );

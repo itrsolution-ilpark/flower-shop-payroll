@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v23 · 완성도 100% · 마지막 수정 2026. 10. 29. 13시 47분 41초
+> 문서 버전 v25 · 완성도 100% · 마지막 수정 2026. 10. 29. 14시 55분 56초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -82,20 +82,22 @@ LIMIT 1;
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 스택
+### 기술 스택 및 구조
+
 - **프레임워크**: Next.js 14+ (App Router, TypeScript)
-- **스타일링**: Tailwind CSS, Lucide React (아이콘)
-- **데이터베이스/인증**: Supabase PostgreSQL
-- **배포 인프라**: GitHub 연동 Vercel (Serverless)
+- **스타일링**: Tailwind CSS, Lucide React (세련된 벡터 아이콘)
+- **시간/날짜 라이브러리**: date-fns (일자 포맷, 5분 단위 시간 보정, 유효성 검증)
+- **데이터베이스/인증**: Supabase PostgreSQL (Row Level Security 및 Service Role 관리)
+- **배포 인프라**: GitHub → Vercel (Serverless)
 
-### 환경 변수 명세 (.env.local)
-```text
-NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxxxxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
+### 필수 환경 변수 명세 (.env.local / Vercel Environment Variables)
+| 환경 변수명 | 설명 | 비고 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL | 클라이언트/서버 공용 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 익명 공개 API 키 | RLS 정책 적용 공개 읽기/일부 쿼리 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase 서비스 롤 비밀 키 | 시스템 관리자 검증 및 RLS 우회 관리 서버 액션용 (클라이언트 절대 노출 금지) |
 
-### 전체 프로젝트 파일 및 폴더 트리 구조
+### 폴더 트리 구조
 ```text
 flower-shop-payroll/
 ├── package.json
@@ -103,38 +105,38 @@ flower-shop-payroll/
 ├── tailwind.config.js
 ├── next.config.js
 ├── .env.local
-├── public/
-│   └── favicon.ico
 └── src/
     ├── app/
-    │   ├── layout.tsx                # 전역 루트 레이아웃 (폰트 설정, 토스트 컨테이너)
-    │   ├── page.tsx                  # 메인: 플라워샵 검색 및 선택 허브 링크
+    │   ├── layout.tsx                # 전역 루트 레이아웃 (Pretendard 폰트, 토스트 알림)
+    │   ├── page.tsx                  # 전체 플라워샵 메인 (상단 실시간 검색 및 매장 선택)
     │   ├── system-setup/
     │   │   └── page.tsx              # 시스템 관리자 최초 등록 화면
     │   ├── shop/
     │   │   ├── register/
-    │   │   │   └── page.tsx          # 시스템 관리자 전용: 플라워샵 등록/수정 화면
+    │   │   │   └── page.tsx          # 시스템 관리자 전용 플라워샵 등록/수정 화면
     │   │   └── [id]/
-    │   │       └── page.tsx          # 개별 플라워샵 허브 (대표/직원 분기 화면)
+    │   │       └── page.tsx          # 개별 플라워샵 메인 (관리자 등록/로그인 및 직원 로그인)
     │   ├── signup/
-    │   │   └── page.tsx              # 플라워샵 직원 가입 신청 화면
+    │   │   └── page.tsx              # 직원 가입 신청 화면
     │   ├── admin/
     │   │   ├── setup/
-    │   │   │   └── page.tsx          # 플라워샵별 대표 관리자 등록/수정 화면 (버그 해결)
-    │   │   ├── page.tsx              # 플라워샵 대표 대시보드 (직원 승인 및 시급 관리)
+    │   │   │   └── page.tsx          # 플라워샵별 관리자 등록/수정 화면 (매장 격리)
+    │   │   ├── page.tsx              # 플라워샵 관리 대시보드 (직원 승인, 시급 책정, 퇴사 처리)
     │   │   └── attendance/
-    │   │       └── page.tsx          # 플라워샵 대표 전용 근태 보완 및 월별 급여 집계 화면
+    │   │       └── page.tsx          # 근무 기록 및 급여 정산 화면 (상태 뱃지, 일자별 보완)
     │   └── employee/
     │       └── dashboard/
-    │           └── page.tsx          # 직원 마이페이지 (출퇴근 등록 및 급여 내역)
+    │           └── page.tsx          # 직원 근무 관리 마이페이지 (휠/타임피커 기반 근태 등록)
     ├── components/
     │   ├── Navbar.tsx                # 상단 헤더 네비게이션
-    │   ├── PinModal.tsx              # 4자리 PIN 입력 및 검증 모달
-    │   └── ui/                       # Button, Input, Modal, Table 공통 컴포넌트
+    │   ├── PinModal.tsx              # 4자리 PIN 입력 모달 컴포넌트
+    │   ├── TimePickerModal.tsx       # 시(00-23)/분(00-55, 5분단위) 세련된 시간 피커 모달
+    │   ├── StatusBadge.tsx           # 승인대기/재직/퇴사 상태 태그 컴포넌트
+    │   └── ui/                       # Button, Input, DatePicker, Card 등 공통 UI
     └── lib/
-        ├── supabaseClient.ts         # 브라우저용 Supabase 클라이언트
-        ├── supabaseServer.ts         # 서버 액션/API용 Supabase 클라이언트
-        └── utils.ts                  # 날짜 포맷, 급여 계산 (ROUND((분/60)*시급)) 유틸
+        ├── supabaseClient.ts         # Supabase Anon 클라이언트
+        ├── supabaseServer.ts         # Supabase Service Role 인스턴스 (서버 전용)
+        └── utils.ts                  # 시간 차이 분 계산, 월 급여 반올림, 통화 포맷 유틸
 ```
 
 ## 3. 품질 기준 (성능·보안·접근성)
@@ -154,6 +156,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v25 | 2026. 10. 29. 14시 40분 1초 | 최종 감수: 최종 개발 착수를 위한 전 섹션 감수 완료: 환경 변수 명세(Service Role Key 포함), smokeRoutes 일치 검증, 테스트 시나리오 보강 |
+| v24 | 2026. 10. 29. 14시 37분 6초 | 명칭 '허브'를 '메인'으로 변경, '대표' 문구 삭제 및 정제, 날짜/시간 선택식 출퇴근 등록/수정 지원, 로그인 목록 퇴사자 제외, 버튼 대괄호 표기 제거 및 UI/상태 뱃지 세련화 |
 | v23 | 2026. 10. 29. 13시 32분 4초 | 최종 감수: 최종 감수를 완료하여 3계층 권한(시스템 관리자/플라워샵 대표/직원), DB 스키마 및 RLS 보안 정책, 실제 동작 폴더 트리와 정적 공개 smokeRoutes 검증을 완비했습니다. |
 | v22 | 2026. 10. 29. 13시 4분 11초 | 3계층 권한(시스템 관리자/플라워샵 대표/직원) 분리와 플라워샵별 관리자 중복 판별 버그 해결 로직을 개발 문서 전반에 정밀하게 반영하고 완성도를 완료 상태로 갱신 |
 | v21 | 2026. 10. 29. 12시 58분 22초 | 최종 감수: 최종 감수 완료: '화원' 명칭을 '플라워샵'으로 전면 통일, 3계층 권한(시스템 관리자, 플라워샵 대표, 플라워샵 직원) 구조 명확화 및 관리자 중복 등록 버그 해결 방안을 반영한 최종 개발 문서 확정 |

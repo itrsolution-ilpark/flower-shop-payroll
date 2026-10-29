@@ -7,12 +7,20 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: "#1E3A8A",
-        emerald: "#047857",
+        primary: {
+          DEFAULT: "#059669",
+          hover: "#047857",
+        },
+        secondary: "#1E293B",
         background: "#F8FAFC",
         surface: "#FFFFFF",
         textColor: "#0F172A",
+        subText: "#64748B",
+        borderLine: "#E2E8F0",
         errorColor: "#EF4444",
+      },
+      borderRadius: {
+        xl: "0.75rem",
       },
     },
   },

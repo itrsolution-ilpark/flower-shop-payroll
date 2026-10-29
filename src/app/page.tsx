@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Button from "@/components/ui/Button";
 import PinModal from "@/components/PinModal";
+import { Store, ShieldCheck } from "lucide-react";
 
 interface ShopItem {
   id: string;
@@ -49,7 +51,9 @@ export default function MainPage() {
 
       const { data: staffData } = await supabase
         .from("staff")
-        .select("shop_id");
+        .select("shop_id, status, is_admin")
+        .eq("status", "active")
+        .eq("is_admin", false);
 
       const countMap: Record<string, number> = {};
       (staffData || []).forEach((st) => {
@@ -98,42 +102,47 @@ export default function MainPage() {
   );
 
   return (
-    <div className="flex flex-col flex-1 p-6">
-      <header className="text-center mb-6 pt-4">
-        <h1 className="text-2xl font-bold text-primary mb-2">
-          플라워샵 근무 관리
-        </h1>
-        <p className="text-xs text-gray-600">
-          소속 플라워샵을 선택하여 출퇴근 등록 및 급여를 정산하세요.
-        </p>
+    <div className="flex flex-col flex-1 pt-6 px-4 pb-8 space-y-5">
+      {/* 1. 상단 헤더: "플라워샵 근무 관리" 로고 및 시스템 관리자 플라워샵 등록/수정 버튼 */}
+      <header className="bg-white p-5 rounded-xl border border-borderLine shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#059669] flex items-center justify-center font-bold">
+            <Store className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-textColor leading-tight">
+              플라워샵 근무 관리
+            </h1>
+            <p className="text-xs text-subText">세련된 멀티 테넌트 근태 및 급여 집계</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setIsPinModalOpen(true)}
+          className="w-full sm:w-auto px-3.5 min-h-[46px] h-[46px] border border-borderLine rounded-xl text-xs font-semibold text-[#1E293B] hover:bg-slate-50 transition flex items-center justify-center gap-1.5"
+        >
+          <ShieldCheck className="w-4 h-4 text-[#059669]" />
+          시스템 관리자 플라워샵 등록/수정
+        </button>
       </header>
 
-      <div className="mb-4">
-        <Button
-          variant="outline"
-          onClick={() => setIsPinModalOpen(true)}
-          className="border-primary text-primary hover:bg-blue-50"
-        >
-          [시스템 관리자 플라워샵 등록/수정]
-        </Button>
-      </div>
-
-      <div className="mb-4">
+      {/* 2. 검색 영역: 상단 배치 실시간 검색 인풋 */}
+      <div>
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="플라워샵 이름을 검색하세요..."
-          className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white text-sm"
+          className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white text-sm"
         />
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto">
+      {/* 3. 매장 목록 그리드: 매장명, 재직 직원 수, 플라워샵 메인 바로가기 버튼 */}
+      <div className="flex-1 space-y-3">
         {loading ? (
-          <div className="text-center py-12 text-xs text-gray-500">로딩 중...</div>
+          <div className="text-center py-12 text-xs text-subText">로딩 중...</div>
         ) : filteredShops.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-gray-200 p-6">
-            <p className="text-xs text-gray-500">
+          <div className="text-center py-12 bg-white rounded-xl border border-borderLine p-6">
+            <p className="text-xs text-subText">
               {searchQuery
                 ? "검색된 플라워샵이 없습니다."
                 : "등록된 플라워샵이 없습니다. 상단 버튼으로 등록해주세요."}
@@ -143,20 +152,20 @@ export default function MainPage() {
           filteredShops.map((shop) => (
             <div
               key={shop.id}
-              className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-between"
+              className="p-4 bg-white border border-borderLine rounded-xl shadow-sm hover:shadow-md transition flex items-center justify-between gap-3"
             >
               <div>
-                <h3 className="font-bold text-base text-textColor">{shop.name}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  소속 직원 수: <span className="font-semibold text-emerald">{shop.staffCount}명</span>
+                <h3 className="font-bold text-sm text-textColor">{shop.name}</h3>
+                <p className="text-xs text-subText mt-0.5">
+                  재직 직원 수: <span className="font-semibold text-[#059669]">{shop.staffCount}명</span>
                 </p>
               </div>
-              <button
-                onClick={() => router.push(`/shop/${shop.id}`)}
-                className="h-10 px-4 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-[#172554] transition"
+              <Link
+                href={`/shop/${shop.id}`}
+                className="min-h-[46px] h-[46px] px-4 bg-[#059669] text-white text-xs font-semibold rounded-xl hover:bg-[#047857] transition flex items-center justify-center active:scale-95"
               >
-                [입장하기]
-              </button>
+                플라워샵 메인 바로가기
+              </Link>
             </div>
           ))
         )}

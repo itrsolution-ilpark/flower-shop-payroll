@@ -53,10 +53,10 @@ export default function PinModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-lg bg-surface p-6 shadow-xl">
-        <h3 className="text-lg font-bold text-textColor mb-1">{title}</h3>
+      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl border border-borderLine">
+        <h3 className="text-base font-bold text-textColor mb-1">{title}</h3>
         {description && (
-          <p className="text-xs text-gray-500 mb-4">{description}</p>
+          <p className="text-xs text-subText mb-4">{description}</p>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -70,7 +70,7 @@ export default function PinModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="이름 입력"
-                className="w-full h-11 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
                 autoFocus
               />
             </div>
@@ -87,12 +87,12 @@ export default function PinModal({
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
               placeholder="••••"
-              className="w-full h-12 text-center tracking-widest text-lg font-bold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+              className="w-full min-h-[46px] h-[46px] text-center tracking-widest text-lg font-bold border border-borderLine rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
             />
           </div>
 
           {error && (
-            <p className="text-xs text-errorColor text-center font-medium">
+            <p className="text-xs text-rose-500 text-center font-medium">
               {error}
             </p>
           )}

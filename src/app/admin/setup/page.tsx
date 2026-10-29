@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Button from "@/components/ui/Button";
 
@@ -52,7 +53,7 @@ function AdminSetupContent() {
       }
       setShopName(shopData.name);
 
-      // 버그 원천 해결: 타 매장과 무관하게 정확히 현재 shop_id 기준 WHERE shop_id = :shopId AND is_admin = true
+      // 버그 원천 해결: 타 매장 관리자와 격리하여 현재 shop_id 기준 관리자 존재 여부만 정확히 판별
       const { data: adminData } = await supabase
         .from("staff")
         .select("id, name, pin_code, is_admin, hourly_wage, status")
@@ -89,7 +90,7 @@ function AdminSetupContent() {
     if (!shopId) return;
 
     if (!name.trim()) {
-      setErrorMsg("대표 이름을 입력해주세요.");
+      setErrorMsg("관리자 이름을 입력해주세요.");
       return;
     }
 
@@ -116,11 +117,11 @@ function AdminSetupContent() {
 
         if (error) {
           console.error("수정 오류:", error);
-          setErrorMsg("대표 정보 수정 중 오류가 발생했습니다.");
+          setErrorMsg("관리자 정보 수정 중 오류가 발생했습니다.");
           return;
         }
 
-        setSuccessMsg("대표 정보가 성공적으로 수정되었습니다.");
+        setSuccessMsg("관리자 정보가 성공적으로 수정되었습니다.");
         setTimeout(() => {
           router.push(`/shop/${shopId}`);
         }, 800);
@@ -155,7 +156,7 @@ function AdminSetupContent() {
           return;
         }
 
-        alert("플라워샵 대표가 등록되었습니다. 허브 화면으로 이동합니다.");
+        alert("플라워샵 관리자가 등록되었습니다. 플라워샵 메인으로 이동합니다.");
         router.push(`/shop/${shopId}`);
       }
     } catch (err) {
@@ -165,7 +166,7 @@ function AdminSetupContent() {
   };
 
   if (loading) {
-    return <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-gray-500">로딩 중...</div>;
+    return <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-subText">로딩 중...</div>;
   }
 
   const isFormValid =
@@ -174,41 +175,36 @@ function AdminSetupContent() {
     pinCode === confirmPinCode;
 
   return (
-    <div className="flex flex-col flex-1 p-6 justify-center">
-      <div className="text-center mb-6">
-        <h1 className="text-xl font-bold text-primary mb-1">
+    <div className="flex flex-col flex-1 pt-6 px-4 pb-8 space-y-5">
+      {/* 1. 상단 헤더: 플라워샵별 관리자 등록 화면 타이틀 */}
+      <div className="bg-white p-5 rounded-xl border border-borderLine shadow-sm">
+        <h1 className="text-base font-bold text-textColor">
           플라워샵별 관리자 등록 화면
         </h1>
-        <p className="text-xs text-gray-600">
+        <p className="text-xs text-subText mt-0.5">
           {isEditMode
-            ? "기존 대표 정보 수정 모드"
-            : "신규 대표 관리자 등록 모드 (PIN 2회 입력 검증)"}
+            ? "소속 관리자 정보 수정 모드"
+            : "신규 관리자 독립 등록 모드 (PIN 2회 입력 일치)"}
         </p>
+
+        {/* 2. 고정 안내: 소속 플라워샵명 고정 뱃지 */}
+        <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-[#059669] rounded-lg text-xs font-semibold">
+          소속 플라워샵: {shopName}
+        </div>
       </div>
 
-      <form onSubmit={handleSaveAdmin} className="space-y-4 bg-white p-6 border border-gray-200 rounded-lg shadow-sm">
+      {/* 3. 등록/수정 폼: 관리자 이름 인풋, 4자리 PIN 인풋, 4자리 PIN 확인 인풋 */}
+      <form onSubmit={handleSaveAdmin} className="space-y-4 bg-white p-6 border border-borderLine rounded-xl shadow-sm">
         <div>
           <label className="block text-xs font-semibold text-textColor mb-1">
-            플라워샵명
-          </label>
-          <input
-            type="text"
-            value={shopName}
-            disabled
-            className="w-full h-11 px-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold cursor-not-allowed"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-textColor mb-1">
-            대표 이름
+            관리자 이름
           </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="대표 관리자 이름"
-            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="관리자 이름 입력"
+            className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
           />
         </div>
 
@@ -223,13 +219,13 @@ function AdminSetupContent() {
             value={pinCode}
             onChange={(e) => setPinCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="••••"
-            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
           />
         </div>
 
         <div>
           <label className="block text-xs font-semibold text-textColor mb-1">
-            PIN 확인
+            4자리 PIN 확인
           </label>
           <input
             type="password"
@@ -238,36 +234,39 @@ function AdminSetupContent() {
             value={confirmPinCode}
             onChange={(e) => setConfirmPinCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="••••"
-            className="w-full h-11 px-3 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
           />
         </div>
 
         {errorMsg && (
-          <p className="text-xs text-errorColor text-center font-medium">
+          <p className="text-xs text-rose-500 text-center font-medium">
             {errorMsg}
           </p>
         )}
         {successMsg && (
-          <p className="text-xs text-emerald text-center font-medium">
+          <p className="text-xs text-[#059669] text-center font-medium">
             {successMsg}
           </p>
         )}
 
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={!isFormValid}
-        >
-          {isEditMode ? "대표 정보 수정" : "대표 등록"}
-        </Button>
-
-        <div className="text-center pt-2">
-          <a
-            href={`/shop/${shopId}`}
-            className="text-xs text-primary font-medium hover:underline"
+        {/* 4. 액션 버튼: 관리자 정보 저장 완료 버튼 */}
+        <div className="pt-2">
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!isFormValid}
           >
-            플라워샵 허브로 돌아가기
-          </a>
+            관리자 정보 저장 완료
+          </Button>
+        </div>
+
+        <div className="text-center pt-1">
+          <Link
+            href={`/shop/${shopId}`}
+            className="text-xs text-[#059669] font-medium hover:underline"
+          >
+            플라워샵 메인으로 돌아가기
+          </Link>
         </div>
       </form>
     </div>
@@ -276,7 +275,7 @@ function AdminSetupContent() {
 
 export default function AdminSetupPage() {
   return (
-    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-gray-500">로딩 중...</div>}>
+    <Suspense fallback={<div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-subText">로딩 중...</div>}>
       <AdminSetupContent />
     </Suspense>
   );

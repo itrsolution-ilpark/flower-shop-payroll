@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 
 interface NavbarProps {
   title: string;
@@ -39,41 +40,41 @@ export default function Navbar({ title }: NavbarProps) {
   };
 
   return (
-    <header className="bg-primary text-white shadow-md">
+    <header className="bg-[#1E293B] text-white shadow-sm border-b border-borderLine">
       <div className="flex items-center justify-between px-4 h-14">
-        <h1 className="text-base font-bold truncate">{title}</h1>
-        <div className="flex items-center space-x-3 text-sm">
+        <h1 className="text-sm font-bold truncate tracking-tight">{title}</h1>
+        <div className="flex items-center space-x-2 text-xs">
           {user && (
-            <span className="font-medium text-slate-100 text-xs">
-              {user.name}님 {user.is_admin ? "(대표)" : ""}
+            <span className="font-medium text-slate-300">
+              {user.name}님 {user.is_admin ? "(관리자)" : ""}
             </span>
           )}
           <button
             onClick={handleLogout}
-            className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-xs transition font-medium"
+            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition font-medium text-slate-200"
           >
             로그아웃
           </button>
         </div>
       </div>
       {user?.is_admin && (
-        <nav className="flex bg-[#172554] border-t border-white/10 text-xs overflow-x-auto">
-          <a
+        <nav className="flex bg-[#0f172a] border-t border-white/10 text-xs overflow-x-auto">
+          <Link
             href="/admin"
             className={`flex-1 text-center py-2.5 px-3 whitespace-nowrap hover:bg-white/10 transition ${
-              pathname === "/admin" ? "bg-white/20 font-bold" : ""
+              pathname === "/admin" ? "bg-white/20 font-bold text-emerald-400" : "text-slate-300"
             }`}
           >
             직원 관리
-          </a>
-          <a
+          </Link>
+          <Link
             href="/admin/attendance"
             className={`flex-1 text-center py-2.5 px-3 whitespace-nowrap hover:bg-white/10 transition ${
-              pathname === "/admin/attendance" ? "bg-white/20 font-bold" : ""
+              pathname === "/admin/attendance" ? "bg-white/20 font-bold text-emerald-400" : "text-slate-300"
             }`}
           >
             근무 기록/급여 정산
-          </a>
+          </Link>
         </nav>
       )}
     </header>
