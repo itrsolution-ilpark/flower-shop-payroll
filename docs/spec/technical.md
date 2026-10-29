@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v35 · 완성도 100% · 마지막 수정 2026. 10. 29. 17시 35분 3초
+> 문서 버전 v36 · 완성도 100% · 마지막 수정 2026. 10. 29. 17시 46분 10초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -117,8 +117,8 @@ CREATE POLICY "Deny direct access auth_attempts" ON auth_attempts FOR ALL USING 
 | 이름 | 용도 |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 키. 브라우저에서 직접 테이블 접근은 하지 않으며 RLS가 적용됨 |
-| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 DB 접근 키. 시스템 관리자 등록, 회원가입 등 RLS 우회 데이터 변경에 필수 (브라우저 노출 금지) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 키. RLS가 적용된 상태에서 제한적 조회 용도 |
+| `SUPABASE_SERVICE_ROLE_KEY` | **서버 전용 DB 접근 키**. 시스템 관리자 등록, 회원가입 등 RLS 우회 데이터 변경에 **필수** (브라우저 노출 금지) |
 | `APP_SESSION_SECRET` | 서명 쿠키 검증용 비밀 문자열 |
 
 ### 폴더 및 파일 구조
@@ -153,7 +153,7 @@ flower-shop-payroll/
     │   ├── TimePicker.tsx
     │   └── StatusBadge.tsx
     └── lib/
-        ├── supabase-server.ts
+        ├── supabase-server.ts  <-- SUPABASE_SERVICE_ROLE_KEY를 사용하는 서버 전용 클라이언트 필수
         ├── session.ts
         ├── auth.ts
         ├── permissions.ts
@@ -161,8 +161,9 @@ flower-shop-payroll/
         └── validation.ts
 ```
 
-### 구현 경계
-- 데이터 변경(INSERT/UPDATE/DELETE)은 브라우저에서 직접 Supabase 클라이언트를 호출하지 않고, 반드시 Next.js Server Actions 또는 API Route에서 Service Role 클라이언트를 통해 처리하여 RLS(42501 오류)를 방지합니다.
+### 구현 경계 (42501 오류 원천 차단)
+- 브라우저 클라이언트에서 `supabase.from('system_admins').insert(...)` 등을 직접 호출하면 RLS 정책 위반(`42501`)이 발생합니다.
+- 반드시 `src/lib/supabase-server.ts` 내에서 `createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY)`를 사용하여 서버 액션 및 API 라우트에서만 쓰기 작업을 수행해야 합니다.
 
 ## 3. 품질 기준 (성능·보안·접근성)
 
@@ -181,6 +182,7 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v36 | 2026. 10. 29. 17시 45분 5초 | Supabase RLS(42501) 오류 해결을 위한 서버 전용 클라이언트(service_role) 사용 강제 및 데이터베이스 초기화 재적용 규칙 보강 |
 | v35 | 2026. 10. 29. 17시 32분 1초 | 테이블 재생성을 위한 Supabase 완전 초기화 반영 및 모든 서버 작업에서 Service Role 클라이언트 강제화 규칙 명시 |
 | v34 | 2026. 10. 29. 17시 9분 41초 | 최종 감수: 최종 감수: RLS 오류(42501) 원인인 system_admins 테이블을 포함한 모든 쓰기 작업을 서버 액션과 Service Role 클라이언트로 명확히 고정하고, 전체 문서 정합성을 검증함 |
 | v33 | 2026. 10. 29. 17시 9분 25초 | 시스템 관리자 최초 등록 및 기타 서버 작업 시 RLS 오류(42501)를 방지하기 위해, 브라우저 클라이언트 대신 반드시 서버 전용 클라이언트(Service Role Key)를 사용하도록 데이터베이스 연동 규칙 및 코드 구현 경계를 명확히 보강함 |

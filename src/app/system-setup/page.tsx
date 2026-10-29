@@ -60,16 +60,15 @@ export default function SystemSetupPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.from("system_admins").insert([
-        {
-          name: name.trim(),
-          pin_code: pinCode,
-        },
-      ]);
+      const res = await fetch("/api/system-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), pin_code: pinCode }),
+      });
 
-      if (error) {
-        console.error("시스템 관리자 등록 오류:", error);
-        setErrorMsg("시스템 관리자 등록 중 오류가 발생했습니다.");
+      const result = await res.json();
+      if (!res.ok) {
+        setErrorMsg(result.error || "시스템 관리자 등록 중 오류가 발생했습니다.");
         setLoading(false);
         return;
       }
@@ -99,7 +98,6 @@ export default function SystemSetupPage() {
 
   return (
     <div className="flex flex-col flex-1">
-      {/* 1. 상단 배너: '플라워샵 근무 관리' 프로그램 배너 */}
       <header className="bg-white border-b border-[#E2E8F0] px-4 md:px-6 h-[56px] md:h-[64px] flex items-center justify-between sticky top-0 z-40">
         <h1 className="text-lg md:text-xl font-bold text-[#0F172A] tracking-tight">
           플라워샵 근무 관리
@@ -107,7 +105,6 @@ export default function SystemSetupPage() {
       </header>
 
       <div className="max-w-md mx-auto w-full p-4 md:p-6 space-y-6 my-auto">
-        {/* ‘시스템 관리자 등록 및 로그인’ 카드 */}
         <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-5">
           <div className="text-center space-y-1">
             <h2 className="text-lg font-bold text-[#0F172A]">시스템 관리자 등록 및 로그인</h2>
