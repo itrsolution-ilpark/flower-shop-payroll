@@ -4,6 +4,7 @@ create table if not exists staff (
   pin_code text not null,
   hourly_wage integer not null default 10000,
   is_admin boolean not null default false,
+  status text not null default 'pending',
   created_at timestamp with time zone default now()
 );
 

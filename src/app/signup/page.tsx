@@ -42,6 +42,7 @@ export default function SignupPage() {
           pin_code: pinCode,
           hourly_wage: wageNum,
           is_admin: false,
+          status: "pending",
         },
       ]);
 
@@ -52,6 +53,7 @@ export default function SignupPage() {
         return;
       }
 
+      alert("가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.");
       router.push("/");
     } catch (err) {
       console.error("예외 발생:", err);
@@ -67,7 +69,7 @@ export default function SignupPage() {
           직원 회원가입
         </h1>
         <p className="text-sm text-gray-600">
-          정보를 입력하고 플라워샵 시스템에 가입하세요.
+          정보를 입력하고 플라워샵 시스템에 가입하세요. (가입 시 대기 상태)
         </p>
       </div>
 
@@ -101,7 +103,7 @@ export default function SignupPage() {
 
         <div>
           <label className="block text-sm font-medium text-textColor mb-2">
-            시급 (원)
+            희망 시급 (원)
           </label>
           <input
             type="number"
@@ -119,7 +121,7 @@ export default function SignupPage() {
         )}
 
         <Button type="submit" variant="primary" disabled={loading}>
-          {loading ? "가입 중..." : "가입 완료"}
+          {loading ? "가입 신청 중..." : "가입 신청 완료"}
         </Button>
 
         <div className="text-center pt-4">

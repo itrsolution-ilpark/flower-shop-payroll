@@ -11,6 +11,7 @@ interface StaffUser {
   name: string;
   is_admin: boolean;
   hourly_wage: number;
+  status: string;
 }
 
 interface StaffMember {
@@ -18,6 +19,7 @@ interface StaffMember {
   name: string;
   hourly_wage: number;
   is_admin: boolean;
+  status: string;
   created_at: string;
 }
 
@@ -29,6 +31,7 @@ export default function AdminStaffPage() {
 
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [editHourlyWage, setEditHourlyWage] = useState<string>("");
+  const [editStatus, setEditStatus] = useState<string>("active");
   const [newPinCode, setNewPinCode] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState<string>("");
@@ -71,6 +74,7 @@ export default function AdminStaffPage() {
   const handleOpenEditModal = (staff: StaffMember) => {
     setEditingStaff(staff);
     setEditHourlyWage(staff.hourly_wage.toString());
+    setEditStatus(staff.status || "active");
     setNewPinCode("");
     setErrorMsg("");
     setSuccessMsg("");
@@ -95,8 +99,9 @@ export default function AdminStaffPage() {
       return;
     }
 
-    const updateData: { hourly_wage: number; pin_code?: string } = {
+    const updateData: { hourly_wage: number; status: string; pin_code?: string } = {
       hourly_wage: wageNum,
+      status: editStatus,
     };
 
     if (newPinCode) {
@@ -130,6 +135,24 @@ export default function AdminStaffPage() {
     }
   };
 
+  const handleQuickStatusChange = async (staffId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from("staff")
+        .update({ status: newStatus })
+        .eq("id", staffId);
+
+      if (error) {
+        console.error("상태 변경 오류:", error);
+        alert("상태 변경 중 오류가 발생했습니다.");
+        return;
+      }
+      fetchStaffList();
+    } catch (err) {
+      console.error("예외 발생:", err);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -139,8 +162,8 @@ export default function AdminStaffPage() {
       <div className="p-4 flex-1 space-y-4">
         <div className="bg-background p-4 rounded-lg border border-secondary flex justify-between items-center">
           <div>
-            <h2 className="text-md font-bold text-textColor">직원 목록 및 관리</h2>
-            <p className="text-xs text-gray-600">등록된 직원 시급 수정 및 PIN 초기화</p>
+            <h2 className="text-md font-bold text-textColor">직원 목록 및 승인 관리</h2>
+            <p className="text-xs text-gray-600">신규 가입 승인(재직/퇴사/대기) 및 시급 수정</p>
           </div>
         </div>
 
@@ -160,7 +183,7 @@ export default function AdminStaffPage() {
                   <tr className="bg-background border-b border-gray-200 text-xs text-textColor">
                     <th className="p-3 font-semibold">이름</th>
                     <th className="p-3 font-semibold">시급</th>
-                    <th className="p-3 font-semibold text-center">권한</th>
+                    <th className="p-3 font-semibold text-center">상태</th>
                     <th className="p-3 font-semibold text-right">관리</th>
                   </tr>
                 </thead>
@@ -175,28 +198,44 @@ export default function AdminStaffPage() {
                     staffList.map((staff) => (
                       <tr key={staff.id} className="hover:bg-gray-50">
                         <td className="p-3 font-medium text-textColor">
-                          {staff.name}
+                          {staff.name} {staff.is_admin ? "(관리자)" : ""}
                         </td>
                         <td className="p-3 text-gray-600">
-                          {staff.hourly_wage.toLocaleString()}원
+                          {staff.is_admin ? "-" : `${staff.hourly_wage.toLocaleString()}원`}
                         </td>
                         <td className="p-3 text-center">
                           {staff.is_admin ? (
                             <span className="inline-block px-2 py-1 text-xs font-semibold bg-green-100 text-primary rounded">
                               관리자
                             </span>
+                          ) : staff.status === "active" ? (
+                            <span className="inline-block px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-700 rounded">
+                              재직 (active)
+                            </span>
+                          ) : staff.status === "pending" ? (
+                            <span className="inline-block px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded">
+                              대기 (pending)
+                            </span>
                           ) : (
-                            <span className="inline-block px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-600 rounded">
-                              직원
+                            <span className="inline-block px-2 py-1 text-xs font-semibold bg-red-100 text-red-700 rounded">
+                              퇴사 (resigned)
                             </span>
                           )}
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 text-right space-x-1">
+                          {!staff.is_admin && staff.status === "pending" && (
+                            <button
+                              onClick={() => handleQuickStatusChange(staff.id, "active")}
+                              className="px-2 py-1 bg-primary text-white text-xs rounded hover:bg-opacity-90 font-medium"
+                            >
+                              승인
+                            </button>
+                          )}
                           <button
                             onClick={() => handleOpenEditModal(staff)}
-                            className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-opacity-90 font-medium"
+                            className="px-2.5 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-800 font-medium"
                           >
-                            수정/초기화
+                            수정
                           </button>
                         </td>
                       </tr>
@@ -217,6 +256,21 @@ export default function AdminStaffPage() {
             </h3>
 
             <form onSubmit={handleUpdateStaff} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-textColor mb-1">
+                  직원 상태
+                </label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm bg-white"
+                >
+                  <option value="pending">대기 (pending)</option>
+                  <option value="active">재직 (active)</option>
+                  <option value="resigned">퇴사 (resigned)</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-textColor mb-1">
                   시급 (원)

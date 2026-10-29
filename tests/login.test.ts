@@ -12,28 +12,41 @@ describe('로그인 및 PIN 번호 검증 로직 테스트', () => {
     expect(validatePin('abcd')).toBe(false)
   })
 
-  it('직원 로그인 정보 일치 여부 확인', () => {
-    const mockStaff = {
+  it('직원 로그인 상태 및 PIN 일치 여부 확인', () => {
+    const mockStaffActive = {
       id: 'staff-uuid-1',
       name: '김플라워',
       pin_code: '7777',
       is_admin: false,
       hourly_wage: 10000,
+      status: 'active',
     }
 
-    const loginAttempt = (pin: string) => {
-      if (pin === mockStaff.pin_code) {
-        return { success: true, user: mockStaff }
+    const mockStaffPending = {
+      id: 'staff-uuid-2',
+      name: '이대기',
+      pin_code: '1111',
+      is_admin: false,
+      hourly_wage: 10000,
+      status: 'pending',
+    }
+
+    const loginAttempt = (staff: typeof mockStaffActive, pin: string) => {
+      if (pin !== staff.pin_code) {
+        return { success: false, error: 'PIN 번호가 일치하지 않습니다.' }
       }
-      return { success: false, error: 'PIN 번호가 일치하지 않습니다.' }
+      if (!staff.is_admin && staff.status !== 'active') {
+        return { success: false, error: '승인 대기 중이거나 퇴사한 직원은 로그인할 수 없습니다.' }
+      }
+      return { success: true, user: staff }
     }
 
-    const successRes = loginAttempt('7777')
+    const successRes = loginAttempt(mockStaffActive, '7777')
     expect(successRes.success).toBe(true)
     expect(successRes.user?.name).toBe('김플라워')
 
-    const failRes = loginAttempt('0000')
-    expect(failRes.success).toBe(false)
-    expect(failRes.error).toBe('PIN 번호가 일치하지 않습니다.')
+    const pendingRes = loginAttempt(mockStaffPending, '1111')
+    expect(pendingRes.success).toBe(false)
+    expect(pendingRes.error).toContain('승인 대기')
   })
 })

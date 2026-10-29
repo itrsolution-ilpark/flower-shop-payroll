@@ -12,6 +12,7 @@ interface UserSession {
   name: string;
   is_admin: boolean;
   hourly_wage: number;
+  status: string;
 }
 
 export default function Navbar({ title }: NavbarProps) {

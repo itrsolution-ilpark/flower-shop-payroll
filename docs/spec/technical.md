@@ -1,6 +1,6 @@
 # 플라워샵 근무 및 급여 관리 시스템 — 기술·데이터 설계
 
-> 문서 버전 v3 · 완성도 100% · 마지막 수정 2026. 10. 29. 10시 35분 37초
+> 문서 버전 v5 · 완성도 100% · 마지막 수정 2026. 10. 29. 10시 42분 18초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -23,6 +23,7 @@
 - `pin_code` (text, 4자리 비밀번호, Not Null)
 - `hourly_wage` (integer, 시급, Not Null, 기본값 10000)
 - `is_admin` (boolean, 관리자 여부, 기본값 false)
+- `status` (text, 직원 상태: `pending` 대기, `active` 재직, `resigned` 퇴사, 기본값 `'pending'`)
 - `created_at` (timestamp, 기본값 `now()`)
 
 #### 2. `attendance` (출퇴근 기록)
@@ -34,8 +35,8 @@
 - `created_at` (timestamp, 기본값 `now()`)
 
 ### RLS(행 수준 보안) 정책
-- `staff` 테이블: 익명 및 인증된 사용자 모두 SELECT 허용(직원 선택용), INSERT는 누구나 가능(회원가입), UPDATE는 본인 또는 `is_admin=true` 관리자 허용.
-- `attendance` 테이블: `staff_id`가 본인이거나 `is_admin=true`인 관리자만 SELECT, INSERT, UPDATE, DELETE 허용.
+- `staff` 테이블: SELECT는 누구나 가능(로그인 드롭다운용), INSERT는 누구나 가능(회원가입/최초설정), UPDATE는 `is_admin=true` 관리자 또는 본인 허용.
+- `attendance` 테이블: `status='active'`인 본인 직원 또는 `is_admin=true` 관리자만 접근 허용.
 
 ## 2. 기술 스택과 폴더 구조
 
@@ -45,29 +46,26 @@
 - **데이터베이스 및 인증**: Supabase
 - **배포**: Vercel
 
-### 환경 변수 (.env.local)
+### 환경 변수 명세 (`.env.local`)
 ```text
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+NEXT_PUBLIC_SUPABASE_URL=실제_슈퍼베이스_프로젝트_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=실제_슈퍼베이스_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=실제_슈퍼베이스_SERVICE_ROLE_KEY
 ```
 
 ### 폴더 구조
 ```text
 src/
   app/
-    page.tsx (로그인/메인)
+    page.tsx (로그인 및 메인)
     signup/
       page.tsx (회원가입)
-    employee/
-      dashboard/page.tsx (직원 마이페이지)
     admin/
+      setup/page.tsx (최초 관리자 설정)
       page.tsx (관리자 대시보드)
       attendance/page.tsx (근무 기록 관리)
-      staff/page.tsx (직원 관리)
-  components/
-    Navbar.tsx
-    Button.tsx
+    employee/
+      dashboard/page.tsx (직원 마이페이지)
   lib/
     supabase.ts
 ```
@@ -75,14 +73,15 @@ src/
 ## 3. 품질 기준 (성능·보안·접근성)
 
 ### 품질 기준
-- **보안**: 4자리 PIN은 평문 저장 또는 간단한 인증 대조 수행, 관리자 페이지는 `is_admin` 플래그 세션 검증 필수
-- **성능**: 모바일 환경에서 페이지 로딩 시간 2초 이내
-- **예외 처리**: 퇴근 시간이 출근 시간보다 빠를 경우 "퇴근 시간은 출근 시간보다 빠를 수 없습니다." 경고 팝업 노출
+- **상태 제어**: `pending` 또는 `resigned` 상태의 직원은 로그인 및 출퇴근 등록 차단 및 안내 메시지 노출
+- **보안**: 최초 관리자 등록 후에는 `/admin/setup` 경로 재접근 방지 로직 적용
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v5 | 2026. 10. 29. 10시 41분 19초 | 최종 감수: 최종 감수 완료: 모든 섹션 상호 검증 및 기술 스택/환경변수/테스트 시나리오 구체화 |
+| v4 | 2026. 10. 29. 10시 41분 16초 | 관리자 최초 등록 프로세스, 직원 상태(재직/퇴사/대기) 관리, 관리자 승인 후 출퇴근 등록 가능하도록 기능 및 데이터 모델 보강 |
 | v3 | 2026. 10. 29. 9시 46분 31초 | 최종 감수: 최종 감수 완료: 모든 섹션 간의 일관성 확보, 수용 기준 및 테스트 시나리오 구체화, 기술 폴더 구조 및 환경 변수 명시. |
 | v2 | 2026. 10. 29. 9시 45분 17초 | 사용자가 휴게 시간 차감 없음 및 관리자 전용 직원 계정(4자리 PIN) 방식을 확정하여 관련 문서 및 가정/미정 사항을 업데이트했습니다. |
 | v1 | 2026. 10. 29. 9시 44분 35초 | 초기 요구사항을 기반으로 화원 시급 및 근무 관리 프로그램의 전체 개발 문서 초안을 작성했습니다. |
