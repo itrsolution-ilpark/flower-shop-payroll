@@ -69,6 +69,12 @@ export default function ShopHubPage({ params }: ShopHubPageProps) {
         console.error("직원/관리자 목록 조회 오류:", staffError);
       } else if (staffData) {
         setStaffList(staffData);
+        // 만약 해당 샵에 관리자가 없으면 관리자 등록 화면으로 자동 이동
+        const admins = staffData.filter((s) => s.is_admin);
+        if (admins.length === 0) {
+          router.push(`/admin/setup?shop_id=${shopId}`);
+          return;
+        }
       }
     } catch (err) {
       console.error("예외 발생:", err);
@@ -178,7 +184,7 @@ export default function ShopHubPage({ params }: ShopHubPageProps) {
               variant="primary"
               onClick={() => router.push(`/admin/setup?shop_id=${shop.id}`)}
             >
-              관리자 등록
+              관리자 등록 화면으로 이동
             </Button>
           ) : (
             <>

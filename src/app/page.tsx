@@ -17,11 +17,24 @@ export default function MainPage() {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchShops();
+    checkSystemAdminAndShops();
   }, []);
 
-  const fetchShops = async () => {
+  const checkSystemAdminAndShops = async () => {
     try {
+      const { data: adminData, error: adminError } = await supabase
+        .from("system_admins")
+        .select("id");
+
+      if (adminError) {
+        console.error("시스템 관리자 확인 오류:", adminError);
+      }
+
+      if (!adminData || adminData.length === 0) {
+        router.push("/system-setup");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("shops")
         .select("id, name")

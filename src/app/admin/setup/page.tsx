@@ -76,7 +76,7 @@ function AdminSetupContent() {
 
   const checkAdminForShop = async (shopId: string) => {
     try {
-      // 샵별 고유 키(shop_id)와 is_admin=true 조건을 정확히 만족하도록 쿼리
+      // 정확히 해당 shop_id에 속한 is_admin=true 인 레코드만 조회
       const { data, error } = await supabase
         .from("staff")
         .select("id, name, pin_code")
@@ -224,7 +224,7 @@ function AdminSetupContent() {
       <form onSubmit={handleSetupAdmin} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-textColor mb-2">
-            선택된 플라워샵 (수정 불가)
+            샵 고정 표시
           </label>
           <div className="flex items-center">
             <select

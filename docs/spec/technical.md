@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v17 · 완성도 100% · 마지막 수정 2026. 10. 29. 12시 46분 46초
+> 문서 버전 v19 · 완성도 100% · 마지막 수정 2026. 10. 29. 12시 55분 40초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -17,12 +17,18 @@
 
 ### 데이터베이스 테이블 설계 (Supabase)
 
-#### 1. `shops` (플라워샵 정보)
+#### 1. `system_admins` (시스템 관리자 정보)
+- `id` (uuid, Primary Key, 기본값 `gen_random_uuid()`)
+- `name` (text, 관리자 이름, Not Null)
+- `pin_code` (text, 4자리 비밀번호, Not Null)
+- `created_at` (timestamp, 기본값 `now()`)
+
+#### 2. `shops` (플라워샵 정보)
 - `id` (uuid, Primary Key, 기본값 `gen_random_uuid()`)
 - `name` (text, 플라워샵 이름, Not Null)
 - `created_at` (timestamp, 기본값 `now()`)
 
-#### 2. `staff` (직원 및 관리자/대표 통합 정보)
+#### 3. `staff` (직원 및 관리자/대표 통합 정보)
 - `id` (uuid, Primary Key, 기본값 `gen_random_uuid()`)
 - `shop_id` (uuid, `shops.id` 외래키, On Delete Cascade, Not Null)
 - `name` (text, 직원/대표 이름, Not Null)
@@ -32,7 +38,7 @@
 - `status` (text, 직원 상태: `pending` 대기, `active` 재직, `resigned` 퇴사, 기본값 `'pending'`)
 - `created_at` (timestamp, 기본값 `now()`)
 
-#### 3. `attendance` (출퇴근 기록)
+#### 4. `attendance` (출퇴근 기록)
 - `id` (uuid, Primary Key, 기본값 `gen_random_uuid()`)
 - `staff_id` (uuid, `staff.id` 외래키, On Delete Cascade)
 - `work_date` (date, 근무 일자, Not Null)
@@ -41,7 +47,8 @@
 - `created_at` (timestamp, 기본값 `now()`)
 
 ### RLS(행 수준 보안) 정책 및 쿼리 수정 사항
-- `shops` 테이블: SELECT, INSERT 누구나 가능.
+- `system_admins` 테이블: SELECT, INSERT 누구나 가능 (최초 등록 제어).
+- `shops` 테이블: SELECT, INSERT, UPDATE 누구나 가능.
 - `staff` 테이블: SELECT/INSERT 누구나 가능, 관리자 존재 여부 확인 쿼리 시 반드시 `WHERE shop_id = target_shop_id AND is_admin = true` 조건을 정확히 만족하도록 수정하여 중복 등록 버그 방지.
 - `attendance` 테이블: `status='active'`인 본인 직원 또는 `is_admin=true` 관리자만 접근 허용.
 
@@ -57,15 +64,17 @@
 ```text
 NEXT_PUBLIC_SUPABASE_URL=실제_슈바베이스_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY=실제_슈바베이스_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=슈바베이스_서비스_롤_키
 ```
 
 ### 폴더 구조
 ```text
 src/
   app/
+    system-setup/page.tsx (시스템 관리자 최초 등록 화면)
     page.tsx (플라워샵 검색 및 목록 메인 화면)
     shop/
-      register/page.tsx (플라워샵 등록 화면)
+      register/page.tsx (플라워샵 신규 등록 및 수정 화면)
       [id]/page.tsx (플라워샵 허브 화면)
     signup/
       page.tsx (직원 회원가입)
@@ -90,6 +99,8 @@ src/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v19 | 2026. 10. 29. 12시 54분 51초 | 최종 감수: 최종 감수 완료: '화원' 명칭 전면 '플라워샵' 수정 및 계층형 권한 체계(시스템 관리자 / 플라워샵 대표 / 플라워샵 직원) 완비, 관리자 중복 등록 버그 방지 쿼리 고도화 반영 |
+| v18 | 2026. 10. 29. 12시 54분 42초 | 시스템 관리자(System Admin) 계정 최초 등록 플로우 추가 및 플라워샵별 대표/직원 권한 체계 정비, 관리자 등록 중복 오류 해결 방안 명시 |
 | v17 | 2026. 10. 29. 12시 45분 55초 | 최종 감수: 최종 감수 완료: 모든 '화원' 명칭을 '플라워샵'으로 통일하고, 시스템 관리자/플라워샵 대표/플라워샵 직원 간의 계층형 권한 구조 및 관리자 중복 등록 버그 수정 사항을 문서 전체에 반영 |
 | v16 | 2026. 10. 29. 12시 45분 48초 | '화원' 단어를 '플라워샵'으로 일괄 변경하고, 시스템 관리자/샵별 대표/샵별 직원 계층형 권한 모델을 정의하였으며, 샵별 관리자 중복 판별 오류(쿼리 조건 누락 및 세션 오인식)를 해결하는 로직을 반영했습니다. |
 | v15 | 2026. 10. 29. 12시 35분 8초 | 최종 감수: 최종 감수 완료: 플라워샵 근무 관리 시스템의 모든 명세, 화면, 데이터베이스, 테스트 시나리오를 일치시키고 개발 가능한 완성도 높은 문서로 확정함. |
