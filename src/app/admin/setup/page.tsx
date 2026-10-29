@@ -76,6 +76,7 @@ function AdminSetupContent() {
 
   const checkAdminForShop = async (shopId: string) => {
     try {
+      // 서버/DB 쿼리 정합성 체크: shop_id와 is_admin=true 조건을 정확히 매칭
       const { data, error } = await supabase
         .from("staff")
         .select("id, name, pin_code")
@@ -149,6 +150,8 @@ function AdminSetupContent() {
           .update({
             name: name.trim(),
             pin_code: pinCode,
+            is_admin: true,
+            status: "active",
           })
           .eq("id", existingAdmin.id);
 
