@@ -1,0 +1,19 @@
+# See https://help.github.com/articles/ignore-files/ for more عنها
+
+/node_modules
+/.next
+/out
+/build
+.DS_Store
+*.pem
+
+.env
+.env*.local
+
+.tsbuildinfo
+next-env.d.ts
+node_modules
+.env.local
+.next
+dist
+.vercel
