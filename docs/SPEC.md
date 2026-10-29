@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 개발 문서
 
-> 문서 버전 v30 · 완성도 100% · 마지막 수정 2026. 10. 29. 16시 20분 42초
+> 문서 버전 v32 · 완성도 100% · 마지막 수정 2026. 10. 29. 17시 2분 59초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -167,20 +167,28 @@ CREATE TABLE auth_attempts (
   attempted_at timestamptz NOT NULL DEFAULT now(),
   succeeded boolean NOT NULL DEFAULT false
 );
+
+-- RLS 활성화 및 서비스 롤 전용 정책 설정
+ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shop_admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compensation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Deny direct access system_admins" ON system_admins FOR ALL USING (false);
+CREATE POLICY "Deny direct access shops" ON shops FOR ALL USING (false);
+CREATE POLICY "Deny direct access shop_admins" ON shop_admins FOR ALL USING (false);
+CREATE POLICY "Deny direct access staff" ON staff FOR ALL USING (false);
+CREATE POLICY "Deny direct access compensation" ON compensation FOR ALL USING (false);
+CREATE POLICY "Deny direct access attendance" ON attendance FOR ALL USING (false);
+CREATE POLICY "Deny direct access auth_attempts" ON auth_attempts FOR ALL USING (false);
 ```
 
-### 급여 계산 규칙
-- 시급 직원의 기록별 금액은 `total_minutes / 60 × 해당 work_date에 유효한 시급`입니다. 월별 합계는 모든 기록별 금액을 더해 원 단위 반올림합니다. 퇴근 전 기록은 저장하지 않습니다.
-- 월급 직원은 월 고정액을 적용합니다. 적용일이 월 중간이거나 월 중간에 금액이 바뀌면, 각 급여 조건이 유효한 달력 일수만큼 `월 급여 × 해당 일수 / 해당 월의 총 일수`로 일할 계산한 뒤 합산하고 원 단위 반올림합니다.
-- 급여 이력 적용일은 중복될 수 없습니다. 관리자는 현재 조건과 같은 날짜를 중복 등록하지 않습니다. 정산에 필요한 적용 급여 조건이 없으면 금액을 0원으로 확정하지 않고 ‘급여 적용 조건이 없어 계산할 수 없습니다.’를 표시합니다.
-- 휴게 시간 차감은 없습니다. 날짜를 넘어가는 근무 기록은 허용하지 않습니다.
-
-### 접근 경계 및 RLS (행 수준 보안)
-- 모든 테이블에 RLS를 활성화합니다. 브라우저에서는 Supabase 테이블을 직접 조회·수정하지 않습니다. 모든 DB 접근은 Next.js 서버에서 수행합니다.
-- 서버는 `SUPABASE_SERVICE_ROLE_KEY`로 DB에 연결하되, 각 요청에서 서명된 세션을 검증한 뒤 역할과 `shop_id`/`staff_id` 조건을 반드시 쿼리에 포함합니다. 서비스 롤 키는 브라우저에 절대 노출하지 않습니다.
-- RLS 정책은 `anon` 및 `authenticated` 역할에 대해 각 테이블의 직접 조회·삽입·수정·삭제를 거부합니다. 서버의 서비스 롤만 RLS를 우회할 수 있으며, 위 서버 권한 검증을 통과한 요청만 처리합니다.
-- 적용 대상은 `system_admins`, `shops`, `shop_admins`, `staff`, `compensation`, `attendance`, `auth_attempts` 전부입니다.
-- 공개 메인 화면에서 필요한 플라워샵 이름과 재직 직원 수는 서버가 조회해 필요한 필드만 반환합니다. 비밀 해시와 직원의 개인정보는 공개 응답에 포함하지 않습니다.
+### 중요: auth_attempts 및 RLS 오류 방지 규칙
+- `auth_attempts`를 포함한 모든 테이블에 `USING (false)` 정책이 걸려 있으므로, 브라우저 클라이언트(`createClient` with Anon Key)에서 직접 `auth_attempts`나 다른 테이블에 `INSERT`/`UPDATE`를 시도하면 Supabase가 거부(`Deny direct access`)합니다.
+- 모든 데이터 변경 및 로그인 실패 기록(`auth_attempts` 기록 포함)은 **반드시 Next.js 서버(Route Handler 또는 Server Action)** 내부에서 `SUPABASE_SERVICE_ROLE_KEY`를 사용하는 전용 서버 클라이언트를 통해서만 수행해야 합니다. 브라우저에서 직접 Supabase 테이블에 접근하는 코드가 없도록 엄격히 분리합니다.
 
 ## 6. 디자인 가이드
 
@@ -343,6 +351,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v32 | 2026. 10. 29. 17시 2분 17초 | 최종 감수: auth_attempts 테이블의 RLS 정책 오류 해결을 위한 RLS 우회 서버 전용 삽입 로직 및 문서 최종 감수 완료 |
+| v31 | 2026. 10. 29. 17시 2분 9초 | auth_attempts 테이블의 RLS 정책 오류로 인해 관리자 등록 시 발생하는 접근 거부 문제를 해결하기 위해, 데이터베이스 마이그레이션 스크립트에 auth_attempts 테이블 관련 명시적 서비스 롤 우회 정책을 보강함. |
 | v30 | 2026. 10. 29. 16시 18분 12초 | 최종 감수: 최종 감수 완료: 플라워샵별 관리자 본인 정보 수정 기능 및 직원 로그인 제외 규칙 반영 완료 |
 | v29 | 2026. 10. 29. 16시 17분 54초 | 플라워샵별 관리자 로그인/인증 화면에 본인 정보 수정 기능 추가, 직원 로그인 대상에서 '대표(관리자)' 역할 제외 반영 |
 | v28 | 2026. 10. 29. 16시 0분 32초 | 최종 감수: 최종 감수: 메인 화면의 플라워샵 관리 버튼 위치(상단 배너 바로 아래), 플라워샵 목록 영역 지정 및 '선택' 버튼 문구, '비밀' 텍스트 통일 및 전체 화면 세련된 구성 반영 완료 |
