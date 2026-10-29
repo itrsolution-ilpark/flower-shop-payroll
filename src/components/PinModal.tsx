@@ -37,7 +37,7 @@ export default function PinModal({
     }
 
     if (!/^[0-9]{4}$/.test(pin)) {
-      setError("4자리 숫자 PIN을 정확히 입력해주세요.");
+      setError("비밀은 숫자 4자리여야 합니다.");
       return;
     }
 
@@ -45,7 +45,7 @@ export default function PinModal({
     try {
       await onSubmit({ name: name.trim(), pin });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "인증에 실패했습니다.");
+      setError(err instanceof Error ? err.message : "이름 또는 비밀을 확인해 주세요.");
     } finally {
       setLoading(false);
     }
@@ -53,16 +53,16 @@ export default function PinModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl border border-borderLine">
-        <h3 className="text-base font-bold text-textColor mb-1">{title}</h3>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl border border-[#E2E8F0]">
+        <h3 className="text-base font-bold text-[#0F172A] mb-1">{title}</h3>
         {description && (
-          <p className="text-xs text-subText mb-4">{description}</p>
+          <p className="text-xs text-[#64748B] mb-4">{description}</p>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {requireName && (
             <div>
-              <label className="block text-xs font-semibold text-textColor mb-1">
+              <label className="block text-xs font-semibold text-[#0F172A] mb-1">
                 관리자 이름
               </label>
               <input
@@ -70,15 +70,15 @@ export default function PinModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="이름 입력"
-                className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
+                className="w-full min-h-[46px] h-[46px] px-3 border border-[#E2E8F0] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
                 autoFocus
               />
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-textColor mb-1">
-              4자리 PIN 번호
+            <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+              비밀
             </label>
             <input
               type="password"
@@ -87,7 +87,7 @@ export default function PinModal({
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
               placeholder="••••"
-              className="w-full min-h-[46px] h-[46px] text-center tracking-widest text-lg font-bold border border-borderLine rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
+              className="w-full min-h-[46px] h-[46px] text-center tracking-widest text-lg font-bold border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
             />
           </div>
 

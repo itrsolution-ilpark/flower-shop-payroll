@@ -13,10 +13,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="bg-background text-textColor min-h-screen font-sans antialiased">
-        <main className="max-w-xl mx-auto min-h-screen flex flex-col bg-surface shadow-sm border-x border-borderLine">
+      <body className="bg-[#F8FAFC] text-[#0F172A] min-h-screen font-sans antialiased">
+        <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
           {children}
-        </main>
+        </div>
       </body>
     </html>
   );

@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v25 · 완성도 100% · 마지막 수정 2026. 10. 29. 14시 55분 56초
+> 문서 버전 v28 · 완성도 100% · 마지막 수정 2026. 10. 29. 16시 2분 21초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -15,147 +15,172 @@
 
 ## 1. 데이터 모델
 
-### 데이터베이스 스키마 및 RLS 보안 정책 (Supabase PostgreSQL)
-
-#### 1. 테이블 정의 스키마
+### 데이터베이스: Supabase PostgreSQL
+모든 비밀은 원문으로 저장하지 않고 서버에서 해시해 저장합니다. `pin_hash`는 4자리 비밀의 단방향 해시이며, 화면이나 API 응답에 포함하지 않습니다. 금액은 원 단위 정수입니다. 아래는 구현에 필요한 테이블과 핵심 제약입니다.
 
 ```sql
--- 1. 시스템 마스터 관리자 (시스템 전체 관리)
 CREATE TABLE system_admins (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  pin_code TEXT NOT NULL, -- 4자리 숫자 PIN
-  created_at TIMESTAMPTZ DEFAULT now()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  pin_hash text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 2. 플라워샵 매장
 CREATE TABLE shops (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ DEFAULT now()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 3. 플라워샵 구성원 (대표 및 직원 통합 관리)
+-- 플라워샵마다 관리자 한 명
+CREATE TABLE shop_admins (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id uuid NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  pin_hash text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE staff (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  pin_code TEXT NOT NULL, -- 4자리 숫자 PIN
-  hourly_wage INTEGER NOT NULL DEFAULT 10000, -- 원 단위 기본 시급
-  is_admin BOOLEAN NOT NULL DEFAULT false, -- true: 플라워샵 대표, false: 일반 직원
-  status TEXT NOT NULL DEFAULT 'pending', -- 'pending'(승인대기), 'active'(재직), 'resigned'(퇴사)
-  created_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT uq_shop_staff UNIQUE (shop_id, name)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id uuid NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  pin_hash text NOT NULL,
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'active', 'resigned')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resigned_at timestamptz,
+  UNIQUE (shop_id, name)
 );
 
--- 4. 일별 출퇴근 기록
+-- 급여 이력. 적용일 이전에 시작한 가장 최근 항목을 해당 날짜에 적용
+CREATE TABLE compensation (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  pay_type text NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
+  amount_krw integer NOT NULL CHECK (amount_krw > 0),
+  effective_from date NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (staff_id, effective_from)
+);
+
 CREATE TABLE attendance (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-  work_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  clock_in TIME NOT NULL,
-  clock_out TIME,
-  total_minutes INTEGER DEFAULT 0, -- 퇴근 시 (clock_out - clock_in) 계산된 분 단위 근무시간
-  created_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT uq_staff_work_date UNIQUE (staff_id, work_date)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  work_date date NOT NULL,
+  clock_in time NOT NULL,
+  clock_out time NOT NULL,
+  total_minutes integer NOT NULL CHECK (total_minutes > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (staff_id, work_date),
+  CHECK (clock_out > clock_in)
+);
+
+-- 로그인 실패 횟수 제한: 서버에서 해시된 식별자와 시간만 기록
+CREATE TABLE auth_attempts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  identity_hash text NOT NULL,
+  attempted_at timestamptz NOT NULL DEFAULT now(),
+  succeeded boolean NOT NULL DEFAULT false
 );
 ```
 
-#### 2. 플라워샵 대표 등록 버그 원천 해결 쿼리
-- **버그 원인**: 기존 로직에서 매장 조건 없이 전체 테이블에서 `is_admin = true`를 검색하여 타 플라워샵의 관리자가 있으면 신규 매장인데도 관리자가 이미 존재한다고 오판단함.
-- **해결 쿼리 (특정 shop_id 한정 스코핑)**:
-```sql
--- 반드시 URL 파라미터 또는 선택된 shop_id를 WHERE 절에 명시
-SELECT id, name, is_admin, hourly_wage, status 
-FROM staff 
-WHERE shop_id = :targetShopId AND is_admin = true 
-LIMIT 1;
-```
-- 결과가 0건이면 무조건 **대표 등록 모드**, 1건 이상이면 기존 대표 정보 수정 모드로 동작.
+### 급여 계산 규칙
+- 시급 직원의 기록별 금액은 `total_minutes / 60 × 해당 work_date에 유효한 시급`입니다. 월별 합계는 모든 기록별 금액을 더해 원 단위 반올림합니다. 퇴근 전 기록은 저장하지 않습니다.
+- 월급 직원은 월 고정액을 적용합니다. 적용일이 월 중간이거나 월 중간에 금액이 바뀌면, 각 급여 조건이 유효한 달력 일수만큼 `월 급여 × 해당 일수 / 해당 월의 총 일수`로 일할 계산한 뒤 합산하고 원 단위 반올림합니다.
+- 급여 이력 적용일은 중복될 수 없습니다. 관리자는 현재 조건과 같은 날짜를 중복 등록하지 않습니다. 정산에 필요한 적용 급여 조건이 없으면 금액을 0원으로 확정하지 않고 ‘급여 적용 조건이 없어 계산할 수 없습니다.’를 표시합니다.
+- 휴게 시간 차감은 없습니다. 날짜를 넘어가는 근무 기록은 허용하지 않습니다.
 
-#### 3. Row Level Security (RLS) 정책 사양
-- 멀티 테넌트 데이터 보호를 위해 모든 테이블에 `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` 적용.
-- `system_admins`: 인증 확인용 API(Server Actions/Route Handler)를 통해 Service Role로 안전하게 조회 및 등록.
-- `shops`: 메인 화면 조회를 위해 익명/공개 읽기(`SELECT`) 허용. 생성/수정은 시스템 관리자 세션 검증 후 허용.
-- `staff`: 동일한 `shop_id`를 가진 사용자 간 본인 소속 매장 확인 허용. 타 매장 데이터 노출 방지.
-- `attendance`: 직원은 본인의 `staff_id` 데이터만 조회/등록 가능, 플라워샵 대표는 본인 매장(`shop_id`) 소속 직원의 모든 근태 데이터 조회/수정 가능.
+### 접근 경계 및 RLS (행 수준 보안)
+- 모든 테이블에 RLS를 활성화합니다. 브라우저에서는 Supabase 테이블을 직접 조회·수정하지 않습니다. 모든 DB 접근은 Next.js 서버에서 수행합니다.
+- 서버는 `SUPABASE_SERVICE_ROLE_KEY`로 DB에 연결하되, 각 요청에서 서명된 세션을 검증한 뒤 역할과 `shop_id`/`staff_id` 조건을 반드시 쿼리에 포함합니다. 서비스 롤 키는 브라우저에 절대 노출하지 않습니다.
+- RLS 정책은 `anon` 및 `authenticated` 역할에 대해 각 테이블의 직접 조회·삽입·수정·삭제를 거부합니다. 서버의 서비스 롤만 RLS를 우회할 수 있으며, 위 서버 권한 검증을 통과한 요청만 처리합니다.
+- 적용 대상은 `system_admins`, `shops`, `shop_admins`, `staff`, `compensation`, `attendance`, `auth_attempts` 전부입니다.
+- 공개 메인 화면에서 필요한 플라워샵 이름과 재직 직원 수는 서버가 조회해 필요한 필드만 반환합니다. 비밀 해시와 직원의 개인정보는 공개 응답에 포함하지 않습니다.
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 스택 및 구조
+### 기술 구성
+- Next.js App Router와 TypeScript를 사용합니다. DB가 필요한 서버 기능은 Route Handler 또는 Server Action에서만 실행합니다.
+- 화면 스타일은 Tailwind CSS로 구현합니다. 날짜 계산은 `date-fns`를 사용합니다.
+- 데이터베이스는 Supabase PostgreSQL, 배포는 GitHub에서 Vercel 무료 플랜으로 합니다. 유료 외부 API는 사용하지 않습니다.
+- 인증은 서버 검증 방식입니다. 성공한 로그인은 역할, 사용자 ID, 플라워샵 ID가 포함된 서명 쿠키로 유지합니다. 쿠키는 `HttpOnly`, `Secure`(운영 환경), `SameSite=Lax`로 설정하고, 비밀 자체는 쿠키에 넣지 않습니다. 쿠키 서명에는 `APP_SESSION_SECRET`을 사용합니다.
+- 4자리 비밀의 추측 위험을 줄이기 위해 계정 식별자별 15분 동안 실패 5회가 발생하면 15분간 로그인을 차단합니다. 인증 오류는 ‘이름 또는 비밀을 확인해 주세요.’로 통일하고 어떤 항목이 틀렸는지 구분해 노출하지 않습니다.
 
-- **프레임워크**: Next.js 14+ (App Router, TypeScript)
-- **스타일링**: Tailwind CSS, Lucide React (세련된 벡터 아이콘)
-- **시간/날짜 라이브러리**: date-fns (일자 포맷, 5분 단위 시간 보정, 유효성 검증)
-- **데이터베이스/인증**: Supabase PostgreSQL (Row Level Security 및 Service Role 관리)
-- **배포 인프라**: GitHub → Vercel (Serverless)
+### 환경 변수
+| 이름 | 용도 |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 키. 브라우저에서 직접 테이블 접근은 하지 않으며 RLS가 적용됨 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 DB 접근 키. 브라우저 번들 및 로그에 노출 금지 |
+| `APP_SESSION_SECRET` | 서명 쿠키 검증용 비밀 문자열. 운영 환경에서 충분히 긴 무작위 값 사용 |
 
-### 필수 환경 변수 명세 (.env.local / Vercel Environment Variables)
-| 환경 변수명 | 설명 | 비고 |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL | 클라이언트/서버 공용 |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 익명 공개 API 키 | RLS 정책 적용 공개 읽기/일부 쿼리 |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase 서비스 롤 비밀 키 | 시스템 관리자 검증 및 RLS 우회 관리 서버 액션용 (클라이언트 절대 노출 금지) |
-
-### 폴더 트리 구조
+### 폴더 및 파일 구조
 ```text
 flower-shop-payroll/
 ├── package.json
+├── next.config.ts
 ├── tsconfig.json
-├── tailwind.config.js
-├── next.config.js
-├── .env.local
+├── tailwind.config.ts
+├── .env.example
+├── supabase/
+│   └── migrations/
+│       └── 0001_initial_schema.sql
 └── src/
     ├── app/
-    │   ├── layout.tsx                # 전역 루트 레이아웃 (Pretendard 폰트, 토스트 알림)
-    │   ├── page.tsx                  # 전체 플라워샵 메인 (상단 실시간 검색 및 매장 선택)
-    │   ├── system-setup/
-    │   │   └── page.tsx              # 시스템 관리자 최초 등록 화면
-    │   ├── shop/
-    │   │   ├── register/
-    │   │   │   └── page.tsx          # 시스템 관리자 전용 플라워샵 등록/수정 화면
-    │   │   └── [id]/
-    │   │       └── page.tsx          # 개별 플라워샵 메인 (관리자 등록/로그인 및 직원 로그인)
-    │   ├── signup/
-    │   │   └── page.tsx              # 직원 가입 신청 화면
-    │   ├── admin/
-    │   │   ├── setup/
-    │   │   │   └── page.tsx          # 플라워샵별 관리자 등록/수정 화면 (매장 격리)
-    │   │   ├── page.tsx              # 플라워샵 관리 대시보드 (직원 승인, 시급 책정, 퇴사 처리)
-    │   │   └── attendance/
-    │   │       └── page.tsx          # 근무 기록 및 급여 정산 화면 (상태 뱃지, 일자별 보완)
-    │   └── employee/
-    │       └── dashboard/
-    │           └── page.tsx          # 직원 근무 관리 마이페이지 (휠/타임피커 기반 근태 등록)
+    │   ├── layout.tsx
+    │   ├── page.tsx
+    │   ├── system-setup/page.tsx
+    │   ├── shop/register/page.tsx
+    │   ├── shop/[id]/page.tsx
+    │   ├── signup/page.tsx
+    │   ├── admin/setup/page.tsx
+    │   ├── admin/page.tsx
+    │   ├── admin/attendance/page.tsx
+    │   ├── employee/dashboard/page.tsx
+    │   └── api/
+    │       └── auth/route.ts
     ├── components/
-    │   ├── Navbar.tsx                # 상단 헤더 네비게이션
-    │   ├── PinModal.tsx              # 4자리 PIN 입력 모달 컴포넌트
-    │   ├── TimePickerModal.tsx       # 시(00-23)/분(00-55, 5분단위) 세련된 시간 피커 모달
-    │   ├── StatusBadge.tsx           # 승인대기/재직/퇴사 상태 태그 컴포넌트
-    │   └── ui/                       # Button, Input, DatePicker, Card 등 공통 UI
+    │   ├── ProgramBanner.tsx
+    │   ├── SecretField.tsx
+    │   ├── MonthPicker.tsx
+    │   ├── TimePicker.tsx
+    │   └── StatusBadge.tsx
     └── lib/
-        ├── supabaseClient.ts         # Supabase Anon 클라이언트
-        ├── supabaseServer.ts         # Supabase Service Role 인스턴스 (서버 전용)
-        └── utils.ts                  # 시간 차이 분 계산, 월 급여 반올림, 통화 포맷 유틸
+        ├── supabase-server.ts
+        ├── session.ts
+        ├── auth.ts
+        ├── permissions.ts
+        ├── payroll.ts
+        └── validation.ts
 ```
+
+### 구현 경계
+- `permissions.ts`에서 요청별 역할과 플라워샵·직원 소속을 확인합니다. 화면을 숨기는 것만으로 권한을 처리하지 말고 서버 작업마다 검증합니다.
+- `payroll.ts`가 급여 계산을 한 곳에서 수행하여 직원 화면과 관리자 정산 화면에서 같은 결과를 사용합니다.
+- `.env.local`은 로컬에서만 사용하고 GitHub에 올리지 않습니다. Vercel에도 위 환경 변수를 등록합니다.
 
 ## 3. 품질 기준 (성능·보안·접근성)
 
-### 품질 및 보안 검증 기준
-1. **4자리 PIN 보안 및 정규식**:
-   - 시스템 관리자, 대표, 직원의 모든 PIN 번호는 정확히 4자리 숫자(`^[0-9]{4}$`)여야 합니다.
-   - 신규 등록 및 변경 시 '비밀번호 확인' 필드를 필수로 입력받아 100% 일치해야 저장 버튼이 활성화됩니다.
-2. **멀티 테넌트 격리성**:
-   - 모든 매장 데이터(`staff`, `attendance`)는 URL 파라미터의 `shop_id`와 인증된 세션의 `shop_id`를 교차 검증하여 타 매장 침범을 완전히 방지합니다.
-3. **정확한 근무 시간 및 급여 산출 공식**:
-   - 출근 기록 후 퇴근 전까지는 '근무 중' 상태로 표시되며 정산 집계에 포함되지 않습니다.
-   - 일별 근무 분 = `퇴근 시간(분) - 출근 시간(분)` (휴게 시간 차감 없음).
-   - 월 총 급여 산출: `Math.round((월 누적 근무 분 / 60) * staff.hourly_wage)` (원 단위 반올림 처리).
+### 보안·정확성·접근성 기준
+- 비밀은 정확히 숫자 4자리(`^[0-9]{4}$`)만 허용합니다. 확인 입력은 두 값이 정확히 일치해야 합니다. 원문 비밀은 DB, 로그, 오류 메시지, 응답에 남기지 않습니다.
+- 시스템 관리자·플라워샵 관리자·직원 권한을 서버에서 매 요청 확인합니다. 직원은 본인 `staff_id`에 한해서만 기록을 조회·수정하고, 관리자는 본인 `shop_id` 데이터만 관리합니다.
+- 플라워샵별 관리자 존재 확인과 등록은 현재 `shop_id`를 사용합니다. 관리자 한 명 제한은 DB의 고유 제약으로도 보장합니다.
+- 로그인 실패는 계정 식별자별 15분 동안 5회까지 허용하고, 이후 15분 동안 차단합니다. 실패 사유는 ‘이름 또는 비밀을 확인해 주세요.’로 동일하게 표시합니다.
+- 근무 기록은 직원·날짜당 하나입니다. 퇴근은 출근보다 늦어야 하고, 날짜를 넘기는 근무는 지원하지 않습니다. 근무 분은 출퇴근 시각 차이로 계산하며 휴게 시간을 빼지 않습니다.
+- 적용 급여 조건은 근무 날짜 또는 급여 적용 날짜에 유효한 가장 최근 조건입니다. 시급 급여는 기록별 근무 분 기준, 월급은 달력 일수 기준으로 일할 계산합니다. 최종 합계는 원 단위 반올림합니다.
+- 월급 직원은 근무 기록을 만들지 않습니다. 퇴사 직원의 과거 기록은 보존하지만 새 기록을 추가하지 못합니다.
+- 모든 입력 필드는 키보드로 조작할 수 있고, 입력 라벨과 오류 문구를 화면 읽기 도구가 읽을 수 있도록 연결합니다. 버튼은 최소 높이 46px, 본문 기본 글자 크기는 16px입니다.
+- 서버 오류가 발생하면 원문 SQL·키·스택 추적을 사용자에게 보여주지 않습니다. 저장 실패 시 입력 내용을 유지하고 재시도 안내를 표시합니다.
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v28 | 2026. 10. 29. 16시 0분 32초 | 최종 감수: 최종 감수: 메인 화면의 플라워샵 관리 버튼 위치(상단 배너 바로 아래), 플라워샵 목록 영역 지정 및 '선택' 버튼 문구, '비밀' 텍스트 통일 및 전체 화면 세련된 구성 반영 완료 |
+| v27 | 2026. 10. 29. 15시 37분 0초 | 최종 감수: 기존 요청을 최종 감수해 급여 유형·적용 시작일·월 선택을 포함하고, 화면·데이터·권한·오류 처리·테스트를 서로 일치하도록 구체화했습니다. |
+| v26 | 2026. 10. 29. 15시 35분 30초 | 모든 화면에 공통 프로그램 배너를 추가하고, 사용자에게 보이는 PIN 문구를 ‘비밀’로 변경했습니다. 메인 화면의 ‘플라워샵 관리’ 버튼 위치와 플라워샵 목록 영역, ‘선택’ 버튼 문구를 구체화했습니다. |
 | v25 | 2026. 10. 29. 14시 40분 1초 | 최종 감수: 최종 개발 착수를 위한 전 섹션 감수 완료: 환경 변수 명세(Service Role Key 포함), smokeRoutes 일치 검증, 테스트 시나리오 보강 |
 | v24 | 2026. 10. 29. 14시 37분 6초 | 명칭 '허브'를 '메인'으로 변경, '대표' 문구 삭제 및 정제, 날짜/시간 선택식 출퇴근 등록/수정 지원, 로그인 목록 퇴사자 제외, 버튼 대괄호 표기 제거 및 UI/상태 뱃지 세련화 |
 | v23 | 2026. 10. 29. 13시 32분 4초 | 최종 감수: 최종 감수를 완료하여 3계층 권한(시스템 관리자/플라워샵 대표/직원), DB 스키마 및 RLS 보안 정책, 실제 동작 폴더 트리와 정적 공개 smokeRoutes 검증을 완비했습니다. |

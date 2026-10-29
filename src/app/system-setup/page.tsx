@@ -48,12 +48,12 @@ export default function SystemSetupPage() {
     }
 
     if (!pinCode || pinCode.length !== 4 || isNaN(Number(pinCode))) {
-      setErrorMsg("PIN 번호는 4자리 숫자여야 합니다.");
+      setErrorMsg("비밀은 숫자 4자리여야 합니다.");
       return;
     }
 
     if (pinCode !== confirmPinCode) {
-      setErrorMsg("PIN 번호 확인이 일치하지 않습니다.");
+      setErrorMsg("비밀 확인이 일치하지 않습니다.");
       return;
     }
 
@@ -86,7 +86,7 @@ export default function SystemSetupPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-subText">
+      <div className="flex flex-col flex-1 p-6 justify-center text-center text-xs text-[#64748B]">
         로딩 중...
       </div>
     );
@@ -98,82 +98,86 @@ export default function SystemSetupPage() {
     pinCode === confirmPinCode;
 
   return (
-    <div className="flex flex-col flex-1 pt-6 px-4 pb-8 space-y-6">
-      {/* 1. 상단 바: 시스템 마스터 설정 안내 배너 */}
-      <div className="bg-[#1E293B] text-white p-5 rounded-xl shadow-sm text-center">
-        <span className="inline-block px-2.5 py-0.5 text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 rounded-full mb-2">
-          초기 설정
-        </span>
-        <h1 className="text-lg font-bold">
-          플라워샵 근무 관리 - 시스템 마스터 설정
+    <div className="flex flex-col flex-1">
+      {/* 1. 상단 배너: '플라워샵 근무 관리' 프로그램 배너 */}
+      <header className="bg-white border-b border-[#E2E8F0] px-4 md:px-6 h-[56px] md:h-[64px] flex items-center justify-between sticky top-0 z-40">
+        <h1 className="text-lg md:text-xl font-bold text-[#0F172A] tracking-tight">
+          플라워샵 근무 관리
         </h1>
-        <p className="text-xs text-slate-300 mt-1">
-          시스템 관리자가 0명입니다. 마스터 계정을 생성하여 시작하세요.
-        </p>
+      </header>
+
+      <div className="max-w-md mx-auto w-full p-4 md:p-6 space-y-6 my-auto">
+        {/* ‘시스템 관리자 등록 및 로그인’ 카드 */}
+        <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-5">
+          <div className="text-center space-y-1">
+            <h2 className="text-lg font-bold text-[#0F172A]">시스템 관리자 등록 및 로그인</h2>
+            <p className="text-xs text-[#64748B]">
+              시스템 관리자가 0명입니다. 최초 계정을 생성하세요.
+            </p>
+          </div>
+
+          <form onSubmit={handleRegisterSystemAdmin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+                이름
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="관리자 이름"
+                className="w-full min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+                비밀
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={pinCode}
+                onChange={(e) => setPinCode(e.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="••••"
+                className="w-full min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] text-center tracking-widest text-lg font-bold bg-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+                비밀 확인
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={confirmPinCode}
+                onChange={(e) => setConfirmPinCode(e.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="••••"
+                className="w-full min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] text-center tracking-widest text-lg font-bold bg-white"
+              />
+            </div>
+
+            {errorMsg && (
+              <p className="text-xs text-rose-500 text-center font-medium">
+                {errorMsg}
+              </p>
+            )}
+
+            <div className="pt-2">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!isFormValid || loading}
+              >
+                시스템 관리자 생성
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
-
-      {/* 2. 본문 카드: 관리자 이름 입력창, 4자리 PIN 입력창, 4자리 PIN 확인 입력창 */}
-      <form onSubmit={handleRegisterSystemAdmin} className="bg-white p-6 rounded-xl border border-borderLine shadow-sm space-y-4">
-        <div>
-          <label className="block text-xs font-semibold text-textColor mb-1">
-            관리자 이름
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="시스템 관리자 이름"
-            className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-textColor mb-1">
-            4자리 PIN
-          </label>
-          <input
-            type="password"
-            inputMode="numeric"
-            maxLength={4}
-            value={pinCode}
-            onChange={(e) => setPinCode(e.target.value.replace(/[^0-9]/g, ""))}
-            placeholder="••••"
-            className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] text-center tracking-widest text-lg font-bold bg-white"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-textColor mb-1">
-            4자리 PIN 확인
-          </label>
-          <input
-            type="password"
-            inputMode="numeric"
-            maxLength={4}
-            value={confirmPinCode}
-            onChange={(e) => setConfirmPinCode(e.target.value.replace(/[^0-9]/g, ""))}
-            placeholder="••••"
-            className="w-full min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl focus:outline-none focus:ring-2 focus:ring-[#059669] text-center tracking-widest text-lg font-bold bg-white"
-          />
-        </div>
-
-        {errorMsg && (
-          <p className="text-xs text-rose-500 text-center font-medium">
-            {errorMsg}
-          </p>
-        )}
-
-        {/* 3. 하단 액션: 시스템 관리자 생성 및 시작 버튼 */}
-        <div className="pt-2">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!isFormValid || loading}
-          >
-            시스템 관리자 생성 및 시작
-          </Button>
-        </div>
-      </form>
     </div>
   );
 }

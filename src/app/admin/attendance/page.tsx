@@ -2,122 +2,101 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import Navbar from "@/components/Navbar";
-import Button from "@/components/ui/Button";
 import StatusBadge from "@/components/StatusBadge";
-import TimePickerModal from "@/components/TimePickerModal";
-import { calculateMinutes, formatMinutesToHoursAndMinutes, calculateSalary } from "@/lib/utils";
-import { Download, Calendar, Clock } from "lucide-react";
+import { ArrowLeft, Calendar, Save, Check } from "lucide-react";
+import { format, parseISO, getDaysInMonth } from "date-fns";
 
 interface StaffUser {
   id: string;
   shop_id: string;
   name: string;
   is_admin: boolean;
-  hourly_wage: number;
 }
 
 interface StaffMember {
   id: string;
   name: string;
-  hourly_wage: number;
   status: string;
+}
+
+interface CompensationItem {
+  pay_type: "hourly" | "monthly";
+  amount_krw: number;
+  effective_from: string;
 }
 
 interface AttendanceRecord {
-  id: string;
+  id?: string;
   staff_id: string;
   work_date: string;
   clock_in: string;
-  clock_out: string | null;
+  clock_out: string;
   total_minutes: number;
-  staff?: {
-    name: string;
-    hourly_wage: number;
-    status: string;
-  };
-}
-
-interface StaffSummary {
-  id: string;
-  name: string;
-  status: string;
-  hourly_wage: number;
-  totalMinutes: number;
-  totalPay: number;
 }
 
 export default function AdminAttendancePage() {
   const router = useRouter();
   const [user, setUser] = useState<StaffUser | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [shopName, setShopName] = useState<string>("");
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
-  const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7)
-  );
+  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), "yyyy-MM"));
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
 
-  // 일자별 근무 기록 수정 모달
-  const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
-  const [editWorkDate, setEditWorkDate] = useState<string>("");
-  const [editClockIn, setEditClockIn] = useState<string>("");
-  const [editClockOut, setEditClockOut] = useState<string>("");
-  const [modalError, setModalError] = useState<string>("");
+  const [compensations, setCompensations] = useState<Record<string, CompensationItem[]>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceRecord>>({}); // date -> record
 
-  // 시간 피커 모달
-  const [timePickerTarget, setTimePickerTarget] = useState<"in" | "out" | null>(null);
+  // 수정 중인 시급 근무 기록 상태 (date -> {clockIn, clockOut})
+  const [editAttendance, setEditAttendance] = useState<Record<string, { clockIn: string; clockOut: string }>>({});
+  const [successMsg, setSuccessMsg] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const rawUser = localStorage.getItem("flower_shop_user");
-    if (!rawUser) {
+    const raw = localStorage.getItem("flower_shop_user");
+    if (!raw) {
       router.push("/");
       return;
     }
-    const parsedUser: StaffUser = JSON.parse(rawUser);
-    if (!parsedUser.is_admin) {
+    const parsed: StaffUser = JSON.parse(raw);
+    if (!parsed.is_admin) {
       router.push("/employee/dashboard");
       return;
     }
-    setUser(parsedUser);
-    fetchData(parsedUser.shop_id, selectedMonth);
-  }, [selectedMonth, router]);
+    setUser(parsed);
+    fetchShopAndStaff(parsed.shop_id);
+  }, [router]);
 
-  const fetchData = async (shopId: string, month: string) => {
+  useEffect(() => {
+    if (user && selectedStaffId) {
+      fetchStaffDetails(selectedStaffId);
+    }
+  }, [selectedMonth, selectedStaffId]);
+
+  const fetchShopAndStaff = async (shopId: string) => {
     setLoading(true);
     try {
-      // 소속 전체 직원 (승인대기, 재직, 퇴사 모두 포함)
-      const { data: staffData } = await supabase
-        .from("staff")
-        .select("id, name, hourly_wage, status")
-        .eq("shop_id", shopId)
-        .eq("is_admin", false)
-        .order("name", { ascending: true });
+      const { data: shopData } = await supabase
+        .from("shops")
+        .select("name")
+        .eq("id", shopId)
+        .single();
 
-      const staff = (staffData || []) as StaffMember[];
-      setStaffList(staff);
-
-      const staffIds = staff.map((s) => s.id);
-      if (staffIds.length === 0) {
-        setAttendanceList([]);
-        setLoading(false);
-        return;
+      if (shopData) {
+        setShopName(shopData.name);
       }
 
-      const startDate = `${month}-01`;
-      const [year, m] = month.split("-").map(Number);
-      const lastDay = new Date(year, m, 0).getDate();
-      const endDate = `${month}-${lastDay.toString().padStart(2, "0")}`;
+      const { data: staffData } = await supabase
+        .from("staff")
+        .select("id, name, status")
+        .eq("shop_id", shopId)
+        .order("name", { ascending: true });
 
-      const { data: attData } = await supabase
-        .from("attendance")
-        .select("*, staff:staff_id(name, hourly_wage, status)")
-        .in("staff_id", staffIds)
-        .gte("work_date", startDate)
-        .lte("work_date", endDate)
-        .order("work_date", { ascending: false });
-
-      setAttendanceList((attData || []) as unknown as AttendanceRecord[]);
+      if (staffData && staffData.length > 0) {
+        setStaffList(staffData);
+        setSelectedStaffId(staffData[0].id);
+      }
     } catch (err) {
       console.error("예외 발생:", err);
     } finally {
@@ -125,363 +104,334 @@ export default function AdminAttendancePage() {
     }
   };
 
-  const handleOpenEdit = (rec: AttendanceRecord) => {
-    setEditingRecord(rec);
-    setEditWorkDate(rec.work_date);
-    setEditClockIn(rec.clock_in ? rec.clock_in.slice(0, 5) : "09:00");
-    setEditClockOut(rec.clock_out ? rec.clock_out.slice(0, 5) : "");
-    setModalError("");
+  const fetchStaffDetails = async (staffId: string) => {
+    try {
+      // 1. 급여 조건 이력 조회
+      const { data: compData } = await supabase
+        .from("compensation")
+        .select("*")
+        .eq("staff_id", staffId)
+        .order("effective_from", { ascending: true });
+
+      const compList = compData || [];
+      setCompensations((prev) => ({ ...prev, [staffId]: compList }));
+
+      // 2. 해당 월 출퇴근 기록 조회 (시급 직원용)
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const startDate = `${selectedMonth}-01`;
+      const lastDay = getDaysInMonth(new Date(year, month - 1));
+      const endDate = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
+
+      const { data: attData } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("staff_id", staffId)
+        .gte("work_date", startDate)
+        .lte("work_date", endDate);
+
+      const map: Record<string, AttendanceRecord> = {};
+      const editMap: Record<string, { clockIn: string; clockOut: string }> = {};
+
+      (attData || []).forEach((att) => {
+        map[att.work_date] = att;
+        editMap[att.work_date] = {
+          clockIn: att.clock_in.slice(0, 5),
+          clockOut: att.clock_out.slice(0, 5),
+        };
+      });
+
+      setAttendanceMap(map);
+      setEditAttendance(editMap);
+    } catch (err) {
+      console.error("예외 발생:", err);
+    }
   };
 
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setModalError("");
+  // 특정 일자에 유효한 급여 조건 반환
+  const getEffectiveCompForDate = (staffId: string, dateStr: string) => {
+    const list = compensations[staffId] || [];
+    let valid = null;
+    for (const c of list) {
+      if (c.effective_from <= dateStr) {
+        valid = c;
+      }
+    }
+    return valid;
+  };
 
-    if (!editingRecord) return;
-    if (!editWorkDate || !editClockIn) {
-      setModalError("근무 날짜와 출근 시간은 필수입니다.");
+  // 급여 계산 함수 (SPEC 정확히 반영)
+  const calculateStaffMonthlyEarnings = (staffId: string, targetMonth: string) => {
+    const list = compensations[staffId] || [];
+    if (list.length === 0) return { error: "급여 적용 조건이 없어 계산할 수 없습니다.", amount: 0, totalMinutes: 0 };
+
+    const [year, month] = targetMonth.split("-").map(Number);
+    const totalDaysInMonth = getDaysInMonth(new Date(year, month - 1));
+
+    // 최신 급여 조건 확인 (시급인지 월급인지)
+    const latestComp = list[list.length - 1];
+
+    if (latestComp.pay_type === "hourly") {
+      let totalMins = 0;
+      let totalPay = 0;
+
+      Object.values(attendanceMap).forEach((att) => {
+        const comp = getEffectiveCompForDate(staffId, att.work_date);
+        if (comp && comp.pay_type === "hourly") {
+          const mins = att.total_minutes || 0;
+          totalMins += mins;
+          totalPay += Math.round((mins / 60) * comp.amount_krw);
+        }
+      });
+
+      return { error: null, amount: totalPay, totalMinutes: totalMins, payType: "hourly" };
+    } else {
+      // 월급 직원 일할 계산
+      let weightedMonthlyPay = 0;
+
+      for (let day = 1; day <= totalDaysInMonth; day++) {
+        const dateStr = `${targetMonth}-${String(day).padStart(2, "0")}`;
+        const comp = getEffectiveCompForDate(staffId, dateStr);
+        if (comp && comp.pay_type === "monthly") {
+          weightedMonthlyPay += comp.amount_krw / totalDaysInMonth;
+        }
+      }
+
+      return { error: null, amount: Math.round(weightedMonthlyPay), totalMinutes: 0, payType: "monthly" };
+    }
+  };
+
+  const handleSaveAttendance = async (workDate: string) => {
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    const item = editAttendance[workDate];
+    if (!item || !item.clockIn || !item.clockOut) {
+      setErrorMsg("출근 및 퇴근 시각을 모두 입력해주세요.");
       return;
     }
 
-    if (editClockOut && editClockIn > editClockOut) {
-      setModalError("퇴근 시간은 출근 시간보다 빨라질 수 없습니다.");
+    if (item.clockOut <= item.clockIn) {
+      setErrorMsg("퇴근 시간은 출근 시간보다 늦어야 합니다.");
       return;
     }
 
-    const minutes = editClockOut ? calculateMinutes(editClockIn, editClockOut) : 0;
+    const [inH, inM] = item.clockIn.split(":").map(Number);
+    const [outH, outM] = item.clockOut.split(":").map(Number);
+    const totalMinutes = (outH * 60 + outM) - (inH * 60 + inM);
+
+    if (totalMinutes <= 0) {
+      setErrorMsg("퇴근 시간은 출근 시간보다 늦어야 합니다.");
+      return;
+    }
 
     try {
-      const { error } = await supabase
-        .from("attendance")
-        .update({
-          work_date: editWorkDate,
-          clock_in: editClockIn,
-          clock_out: editClockOut || null,
-          total_minutes: minutes,
-        })
-        .eq("id", editingRecord.id);
+      const { error } = await supabase.from("attendance").upsert(
+        [
+          {
+            staff_id: selectedStaffId,
+            work_date: workDate,
+            clock_in: item.clockIn + ":00",
+            clock_out: item.clockOut + ":00",
+            total_minutes: totalMinutes,
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        { onConflict: "staff_id,work_date" }
+      );
 
       if (error) {
-        setModalError("수정 저장 중 오류가 발생했습니다.");
+        setErrorMsg("근무 기록 저장 중 오류가 발생했습니다.");
         return;
       }
 
-      setEditingRecord(null);
-      if (user) fetchData(user.shop_id, selectedMonth);
+      setSuccessMsg(`${workDate} 근무 기록이 저장되었습니다.`);
+      fetchStaffDetails(selectedStaffId);
     } catch (err) {
       console.error("예외 발생:", err);
-      setModalError("처리 중 오류가 발생했습니다.");
+      setErrorMsg("저장 중 오류가 발생했습니다.");
     }
-  };
-
-  // 엑셀형 요약 다운로드 (CSV 포맷)
-  const handleDownloadCsv = () => {
-    if (summaries.length === 0) {
-      alert("다운로드할 정산 내역이 없습니다.");
-      return;
-    }
-
-    const headers = ["직원명", "상태", "총 근무 시간", "시급", "총 지급 급여"];
-    const rows = summaries.map((s) => [
-      s.name,
-      s.status === "active" ? "재직" : s.status === "pending" ? "승인대기" : "퇴사",
-      formatMinutesToHoursAndMinutes(s.totalMinutes),
-      `${s.hourly_wage}원`,
-      `${s.totalPay}원`,
-    ]);
-
-    const csvContent =
-      "\uFEFF" +
-      [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `플라워샵_급여정산_${selectedMonth}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   if (!user) return null;
 
-  // 직원별 월간 요약 표 계산
-  const summaries: StaffSummary[] = staffList.map((st) => {
-    const records = attendanceList.filter((a) => a.staff_id === st.id && a.clock_out);
-    const totalMinutes = records.reduce((acc, cur) => {
-      const mins = cur.total_minutes || calculateMinutes(cur.clock_in, cur.clock_out);
-      return acc + mins;
-    }, 0);
-    const totalPay = calculateSalary(totalMinutes, st.hourly_wage);
+  const selectedStaff = staffList.find((s) => s.id === selectedStaffId);
+  const earnings = selectedStaffId ? calculateStaffMonthlyEarnings(selectedStaffId, selectedMonth) : { error: "급여 적용 조건이 없어 계산할 수 없습니다.", amount: 0, totalMinutes: 0 };
 
-    return {
-      id: st.id,
-      name: st.name,
-      status: st.status,
-      hourly_wage: st.hourly_wage,
-      totalMinutes,
-      totalPay,
-    };
+  const [year, month] = selectedMonth.split("-").map(Number);
+  const totalDaysInMonth = getDaysInMonth(new Date(year, month - 1));
+  const monthDays = Array.from({ length: totalDaysInMonth }, (_, i) => {
+    const day = i + 1;
+    return `${selectedMonth}-${String(day).padStart(2, "0")}`;
   });
 
-  const grandTotalPay = summaries.reduce((acc, cur) => acc + cur.totalPay, 0);
+  const activeCompList = compensations[selectedStaffId] || [];
+  const latestComp = activeCompList[activeCompList.length - 1];
+  const isMonthly = latestComp?.pay_type === "monthly";
 
   return (
     <div className="flex flex-col flex-1">
-      <Navbar title="근무 기록 및 급여 정산" />
-
-      <div className="pt-6 px-4 pb-8 flex-1 space-y-6">
-        {/* 1. 상단 툴바: 정산 연월 선택 셀렉트박스 (예: 2025년 05월) 및 엑셀형 요약 다운로드 */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 bg-white p-5 rounded-xl border border-borderLine shadow-sm">
-          <div>
-            <h1 className="text-base font-bold text-textColor">근무 기록 및 급여 정산</h1>
-            <p className="text-xs text-subText">월별 근무 시간 및 총 지급 급여 자동 산출</p>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="flex-1 sm:flex-none min-h-[46px] h-[46px] px-3 border border-borderLine rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
-            />
-            <button
-              onClick={handleDownloadCsv}
-              className="min-h-[46px] h-[46px] px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap"
-            >
-              <Download className="w-4 h-4" />
-              엑셀형 요약 다운로드
-            </button>
-          </div>
+      {/* 공통 배너 */}
+      <header className="bg-white border-b border-[#E2E8F0] px-4 md:px-6 h-[56px] md:h-[64px] flex items-center justify-between sticky top-0 z-40">
+        <h1 className="text-lg md:text-xl font-bold text-[#0F172A] tracking-tight">
+          플라워샵 근무 관리
+        </h1>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin"
+            className="px-3 min-h-[40px] h-[40px] border border-[#E2E8F0] rounded-xl text-xs text-[#0F172A] font-semibold hover:bg-slate-50 flex items-center gap-1.5 transition"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            직원 관리
+          </Link>
         </div>
+      </header>
 
-        {/* 2. 직원별 정산 테이블: 열 구성: 직원명, 상태 뱃지(승인대기/재직/퇴사), 총 근무 시간, 시급, 총 지급 급여, 상세/수정 액션 */}
-        <section className="bg-white rounded-xl border border-borderLine shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-borderLine bg-slate-50 flex items-center justify-between">
-            <h2 className="font-bold text-xs text-textColor">직원별 월별 급여 정산 집계</h2>
-            <span className="text-xs text-subText">{selectedMonth} 기준</span>
+      <div className="max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6">
+        {/* ‘근무 기록 및 급여 정산’ 카드 */}
+        <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
+            <div>
+              <h2 className="text-base font-bold text-[#0F172A]">근무 기록 및 급여 정산</h2>
+              <p className="text-xs text-[#64748B] mt-0.5">{shopName} 소속 직원별 월별 정산 및 근무 기록 보완</p>
+            </div>
+
+            {/* 월 선택 (YYYY-MM) */}
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-[#059669]" />
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="min-h-[42px] h-[42px] px-3 border border-[#E2E8F0] rounded-xl text-xs font-semibold bg-white text-[#0F172A]"
+              />
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-100/70 text-slate-700 border-b border-borderLine">
-                  <th className="p-3 font-semibold">직원명</th>
-                  <th className="p-3 font-semibold text-center">상태</th>
-                  <th className="p-3 font-semibold text-right">총 근무 시간</th>
-                  <th className="p-3 font-semibold text-right">시급</th>
-                  <th className="p-3 font-semibold text-right">총 지급 급여</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-borderLine">
-                {summaries.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-6 text-center text-subText">
-                      소속 직원이 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  summaries.map((sm) => (
-                    <tr key={sm.id} className="hover:bg-slate-50 transition">
-                      <td className="p-3 font-bold text-textColor">{sm.name}</td>
-                      <td className="p-3 text-center">
-                        <StatusBadge status={sm.status} />
-                      </td>
-                      <td className="p-3 text-right text-slate-700 font-medium">
-                        {formatMinutesToHoursAndMinutes(sm.totalMinutes)}
-                      </td>
-                      <td className="p-3 text-right text-subText">
-                        {sm.hourly_wage.toLocaleString()}원
-                      </td>
-                      <td className="p-3 text-right font-extrabold text-[#059669]">
-                        {sm.totalPay.toLocaleString()}원
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {summaries.length > 0 && (
-            <div className="p-4 bg-slate-50 border-t border-borderLine flex justify-between items-center text-xs font-bold text-textColor">
-              <span>월 전체 총 지급 급여 합계</span>
-              <span className="text-[#059669] text-base font-extrabold">
-                {grandTotalPay.toLocaleString()}원
-              </span>
+
+          {/* 직원 선택 탭 */}
+          {staffList.length === 0 ? (
+            <p className="text-xs text-[#64748B] text-center py-6">등록된 직원이 없습니다.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {staffList.map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setSelectedStaffId(st.id)}
+                  className={`px-4 min-h-[42px] h-[42px] rounded-xl text-xs font-semibold transition flex items-center gap-2 ${
+                    selectedStaffId === st.id
+                      ? "bg-[#059669] text-white shadow-sm"
+                      : "bg-[#F8FAFC] text-[#0F172A] border border-[#E2E8F0] hover:bg-slate-100"
+                  }`}
+                >
+                  <span>{st.name}</span>
+                  <StatusBadge status={st.status} />
+                </button>
+              ))}
             </div>
           )}
-        </section>
+        </div>
 
-        {/* 3. 일자별 근무 기록 수정 섹션: 날짜 선택, 출근 시간 피커, 퇴근 시간 피커, 기록 보완 저장 버튼 */}
-        <section className="bg-white rounded-xl border border-borderLine shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-borderLine bg-slate-50 flex items-center justify-between">
-            <h2 className="font-bold text-xs text-textColor">일자별 출퇴근 내역 및 기록 보완</h2>
-            <span className="text-xs text-subText">{attendanceList.length}건</span>
-          </div>
+        {selectedStaff && (
+          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl">
+              <div>
+                <h3 className="font-bold text-base text-[#0F172A]">{selectedStaff.name} 님의 {selectedMonth} 정산 요약</h3>
+                <p className="text-xs text-[#64748B] mt-0.5">
+                  급여 유형: <span className="font-semibold text-[#0F172A]">{isMonthly ? "월급" : "시급"}</span>
+                  {!isMonthly && ` · 총 근무 시간: ${Math.floor(earnings.totalMinutes / 60)}시간 ${earnings.totalMinutes % 60}분`}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-[#64748B] block">지급 예정액 (원 단위 반올림)</span>
+                <span className="text-lg font-bold text-[#059669]">
+                  {earnings.error ? earnings.error : earnings.amount.toLocaleString() + "원"}
+                </span>
+              </div>
+            </div>
 
-          {loading ? (
-            <p className="text-xs text-center py-8 text-subText">조회 중...</p>
-          ) : attendanceList.length === 0 ? (
-            <p className="text-xs text-center py-8 text-subText">해당 월에 기록된 출퇴근 내역이 없습니다.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100/70 text-slate-700 border-b border-borderLine">
-                    <th className="p-3 font-semibold">날짜</th>
-                    <th className="p-3 font-semibold">직원명</th>
-                    <th className="p-3 font-semibold text-center">상태</th>
-                    <th className="p-3 font-semibold">출근</th>
-                    <th className="p-3 font-semibold">퇴근</th>
-                    <th className="p-3 font-semibold text-right">근무 시간</th>
-                    <th className="p-3 font-semibold text-center">상세/수정</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-borderLine">
-                  {attendanceList.map((rec) => {
-                    const mins = rec.clock_out
-                      ? rec.total_minutes || calculateMinutes(rec.clock_in, rec.clock_out)
-                      : 0;
-                    const staffStatus = rec.staff?.status || "active";
+            {errorMsg && (
+              <p className="text-xs text-rose-500 font-medium text-center">{errorMsg}</p>
+            )}
+            {successMsg && (
+              <p className="text-xs text-[#059669] font-medium text-center">{successMsg}</p>
+            )}
+
+            {/* 상세 내역 영역 */}
+            {isMonthly ? (
+              <div className="p-8 text-center bg-slate-50 border border-[#E2E8F0] rounded-xl space-y-2">
+                <p className="text-sm font-bold text-[#0F172A]">월급 직원은 출퇴근 기록을 입력하지 않습니다.</p>
+                <p className="text-xs text-[#64748B]">해당 월 고정액을 기준으로 일할 계산된 급여가 지급됩니다.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <h4 className="text-sm font-bold text-[#0F172A] border-b border-[#E2E8F0] pb-2">
+                  일자별 출퇴근 기록 및 보완 (시급 직원)
+                </h4>
+
+                <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                  {monthDays.map((dateStr) => {
+                    const att = attendanceMap[dateStr];
+                    const editItem = editAttendance[dateStr] || { clockIn: "09:00", clockOut: "18:00" };
+
                     return (
-                      <tr key={rec.id} className="hover:bg-slate-50 transition">
-                        <td className="p-3 font-medium text-slate-700">{rec.work_date}</td>
-                        <td className="p-3 font-bold text-textColor">{rec.staff?.name || "-"}</td>
-                        <td className="p-3 text-center">
-                          <StatusBadge status={staffStatus} />
-                        </td>
-                        <td className="p-3 text-slate-700">{rec.clock_in ? rec.clock_in.slice(0, 5) : "-"}</td>
-                        <td className="p-3 text-slate-700">
-                          {rec.clock_out ? rec.clock_out.slice(0, 5) : (
-                            <span className="text-[#059669] font-semibold">근무 중</span>
-                          )}
-                        </td>
-                        <td className="p-3 text-right font-medium text-slate-700">
-                          {rec.clock_out ? formatMinutesToHoursAndMinutes(mins) : "-"}
-                        </td>
-                        <td className="p-3 text-center">
+                      <div
+                        key={dateStr}
+                        className="p-3.5 bg-slate-50 border border-[#E2E8F0] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="w-32">
+                          <span className="font-semibold text-xs text-[#0F172A] block">{dateStr}</span>
+                          <span className="text-[11px] text-[#64748B]">
+                            {att ? `${att.total_minutes}분 근무` : "기록 없음"}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-[#64748B]">출근</span>
+                            <input
+                              type="time"
+                              value={editItem.clockIn}
+                              onChange={(e) =>
+                                setEditAttendance({
+                                  ...editAttendance,
+                                  [dateStr]: { ...editItem, clockIn: e.target.value },
+                                })
+                              }
+                              className="min-h-[38px] h-[38px] px-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-[#64748B]">퇴근</span>
+                            <input
+                              type="time"
+                              value={editItem.clockOut}
+                              onChange={(e) =>
+                                setEditAttendance({
+                                  ...editAttendance,
+                                  [dateStr]: { ...editItem, clockOut: e.target.value },
+                                })
+                              }
+                              className="min-h-[38px] h-[38px] px-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white"
+                            />
+                          </div>
+
                           <button
-                            onClick={() => handleOpenEdit(rec)}
-                            className="px-3 min-h-[36px] h-[36px] bg-[#1E293B] hover:bg-[#0f172a] text-white text-xs font-semibold rounded-lg transition"
+                            onClick={() => handleSaveAttendance(dateStr)}
+                            className="min-h-[38px] h-[38px] px-3.5 bg-[#059669] text-white text-xs font-semibold rounded-lg hover:bg-[#047857] transition flex items-center gap-1"
                           >
-                            기록 수정
+                            <Save className="w-3.5 h-3.5" />
+                            저장
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-
-      {/* 일자별 근무 기록 수정 모달: 날짜 선택, 출근 시간 피커, 퇴근 시간 피커, 기록 보완 저장 버튼 */}
-      {editingRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm bg-white rounded-xl p-6 shadow-xl border border-borderLine space-y-4">
-            <div className="border-b border-borderLine pb-2">
-              <h3 className="text-base font-bold text-textColor">
-                일자별 근무 기록 수정
-              </h3>
-              <p className="text-xs text-subText mt-0.5">
-                직원: <span className="font-semibold text-textColor">{editingRecord.staff?.name}</span>
-              </p>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-textColor mb-1">
-                  날짜 선택
-                </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={editWorkDate}
-                    onChange={(e) => setEditWorkDate(e.target.value)}
-                    className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#059669]"
-                  />
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-textColor mb-1">
-                  출근 시간 피커
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setTimePickerTarget("in")}
-                  className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-xs bg-white text-left flex items-center justify-between hover:bg-slate-50 transition"
-                >
-                  <span className="font-semibold text-textColor">{editClockIn || "09:00"}</span>
-                  <Clock className="w-4 h-4 text-subText" />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-textColor mb-1">
-                  퇴근 시간 피커
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setTimePickerTarget("out")}
-                  className="w-full min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-xs bg-white text-left flex items-center justify-between hover:bg-slate-50 transition"
-                >
-                  <span className={editClockOut ? "font-semibold text-textColor" : "text-subText"}>
-                    {editClockOut || "시간 선택 (근무 중이면 비움)"}
-                  </span>
-                  <Clock className="w-4 h-4 text-subText" />
-                </button>
-                {editClockOut && (
-                  <button
-                    type="button"
-                    onClick={() => setEditClockOut("")}
-                    className="text-[11px] text-rose-500 hover:underline mt-1"
-                  >
-                    퇴근 미완료(근무 중)로 초기화
-                  </button>
-                )}
-              </div>
-
-              {modalError && (
-                <p className="text-xs text-rose-500 text-center font-medium">
-                  {modalError}
-                </p>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setEditingRecord(null)}
-                >
-                  취소
-                </Button>
-                <Button type="submit" variant="primary">
-                  기록 보완 저장
-                </Button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* 세련된 휠/타임피커 모달 연동 */}
-      <TimePickerModal
-        isOpen={timePickerTarget !== null}
-        title={timePickerTarget === "in" ? "출근 시간 선택" : "퇴근 시간 선택"}
-        initialValue={
-          timePickerTarget === "in" ? editClockIn || "09:00" : editClockOut || "18:00"
-        }
-        onClose={() => setTimePickerTarget(null)}
-        onSelect={(time) => {
-          if (timePickerTarget === "in") {
-            setEditClockIn(time);
-          } else if (timePickerTarget === "out") {
-            setEditClockOut(time);
-          }
-        }}
-      />
+        )}
+      </div>
     </div>
   );
 }

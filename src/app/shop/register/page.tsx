@@ -72,7 +72,7 @@ export default function ShopRegisterPage() {
 
       if (error || !data) {
         console.error("등록 오류:", error);
-        setErrorMsg("이미 존재하는 플라워샵명이거나 등록 중 오류가 발생했습니다.");
+        setErrorMsg("이미 등록된 플라워샵 이름입니다.");
         return;
       }
 
@@ -81,7 +81,7 @@ export default function ShopRegisterPage() {
       fetchShops();
     } catch (err) {
       console.error("예외 발생:", err);
-      setErrorMsg("플라워샵 추가 중 오류가 발생했습니다.");
+      setErrorMsg("이미 등록된 플라워샵 이름입니다.");
     }
   };
 
@@ -110,7 +110,7 @@ export default function ShopRegisterPage() {
 
       if (error) {
         console.error("수정 오류:", error);
-        setErrorMsg("수정 중 오류가 발생했습니다.");
+        setErrorMsg("이미 등록된 플라워샵 이름입니다.");
         return;
       }
 
@@ -120,112 +120,117 @@ export default function ShopRegisterPage() {
       fetchShops();
     } catch (err) {
       console.error("예외 발생:", err);
-      setErrorMsg("수정 처리 중 오류가 발생했습니다.");
+      setErrorMsg("이미 등록된 플라워샵 이름입니다.");
     }
   };
 
   return (
-    <div className="flex flex-col flex-1 pt-6 px-4 pb-8 space-y-5">
-      {/* 1. 상단 헤더: 플라워샵 등록 및 관리 뒤로가기 네비게이션 */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-borderLine shadow-sm">
-        <div>
-          <h1 className="text-base font-bold text-textColor">플라워샵 등록 및 관리</h1>
-          <p className="text-xs text-subText">시스템 관리자 전용 매장 개설 및 수정</p>
-        </div>
+    <div className="flex flex-col flex-1">
+      {/* 공통 배너 */}
+      <header className="bg-white border-b border-[#E2E8F0] px-4 md:px-6 h-[56px] md:h-[64px] flex items-center justify-between sticky top-0 z-40">
+        <h1 className="text-lg md:text-xl font-bold text-[#0F172A] tracking-tight">
+          플라워샵 근무 관리
+        </h1>
         <Link
           href="/"
-          className="px-3 min-h-[46px] h-[46px] border border-borderLine rounded-xl text-xs text-slate-700 font-semibold hover:bg-slate-50 flex items-center gap-1.5 transition"
+          className="px-3 min-h-[40px] h-[40px] border border-[#E2E8F0] rounded-xl text-xs text-[#0F172A] font-semibold hover:bg-slate-50 flex items-center gap-1.5 transition"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          메인으로 이동
+          메인으로 돌아가기
         </Link>
-      </div>
+      </header>
 
-      {/* 2. 신규 등록 카드: 신규 플라워샵명 입력 인풋, 플라워샵 추가 버튼 */}
-      <form onSubmit={handleAddShop} className="bg-white p-5 rounded-xl border border-borderLine shadow-sm space-y-3">
-        <label className="block text-xs font-semibold text-textColor">
-          신규 플라워샵명
-        </label>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="신규 플라워샵명을 입력하세요"
-            className="flex-1 min-h-[46px] h-[46px] px-3.5 border border-borderLine rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
-          />
-          <div className="sm:w-36">
-            <Button type="submit" variant="primary" className="flex items-center gap-1">
-              <Plus className="w-4 h-4" />
-              플라워샵 추가
-            </Button>
-          </div>
-        </div>
-      </form>
+      <div className="max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6">
+        {/* ‘플라워샵 등록 및 관리’ 카드 */}
+        <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-5">
+          <h2 className="text-base font-bold text-[#0F172A]">플라워샵 등록 및 관리</h2>
 
-      {errorMsg && (
-        <p className="text-xs text-rose-500 text-center font-medium">
-          {errorMsg}
-        </p>
-      )}
-      {successMsg && (
-        <p className="text-xs text-[#059669] text-center font-medium">
-          {successMsg}
-        </p>
-      )}
-
-      {/* 3. 등록 매장 목록 카드: 매장명 수정 인라인 인풋 및 수정 내용 저장 버튼 */}
-      <div className="bg-white p-5 rounded-xl border border-borderLine shadow-sm flex-1 space-y-3">
-        <h2 className="text-sm font-bold text-textColor">등록 매장 목록</h2>
-        {loading ? (
-          <p className="text-xs text-subText text-center py-6">로딩 중...</p>
-        ) : shops.length === 0 ? (
-          <p className="text-xs text-subText text-center py-6">등록된 플라워샵이 없습니다.</p>
-        ) : (
-          <div className="space-y-2.5">
-            {shops.map((shop) => (
-              <div
-                key={shop.id}
-                className="p-3.5 bg-slate-50/70 border border-borderLine rounded-xl flex items-center justify-between gap-2"
-              >
-                {editingShopId === shop.id ? (
-                  <div className="flex-1 flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      className="flex-1 min-h-[40px] h-[40px] px-3 border border-borderLine rounded-lg text-sm bg-white"
-                    />
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => handleSaveEdit(shop.id)}
-                        className="px-3 min-h-[40px] h-[40px] bg-[#059669] text-white text-xs font-semibold rounded-lg hover:bg-[#047857] transition"
-                      >
-                        수정 내용 저장
-                      </button>
-                      <button
-                        onClick={() => setEditingShopId(null)}
-                        className="px-3 min-h-[40px] h-[40px] bg-slate-200 text-slate-700 text-xs rounded-lg hover:bg-slate-300 transition"
-                      >
-                        취소
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <span className="font-semibold text-sm text-textColor">{shop.name}</span>
-                    <button
-                      onClick={() => handleStartEdit(shop)}
-                      className="px-3 min-h-[38px] h-[38px] border border-borderLine text-slate-700 text-xs rounded-lg hover:bg-white transition"
-                    >
-                      매장명 수정
-                    </button>
-                  </>
-                )}
+          <form onSubmit={handleAddShop} className="space-y-3">
+            <label className="block text-xs font-semibold text-[#0F172A]">
+              새 플라워샵 이름 입력
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="플라워샵 이름 입력"
+                className="flex-1 min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#059669] bg-white"
+              />
+              <div className="sm:w-36">
+                <Button type="submit" variant="primary" className="flex items-center gap-1">
+                  <Plus className="w-4 h-4" />
+                  플라워샵 추가
+                </Button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          </form>
+
+          {errorMsg && (
+            <p className="text-xs text-rose-500 font-medium text-center">
+              {errorMsg}
+            </p>
+          )}
+          {successMsg && (
+            <p className="text-xs text-[#059669] font-medium text-center">
+              {successMsg}
+            </p>
+          )}
+        </div>
+
+        {/* 등록된 플라워샵 목록 */}
+        <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+          <h2 className="text-base font-bold text-[#0F172A]">등록된 플라워샵 목록</h2>
+          {loading ? (
+            <p className="text-xs text-[#64748B] text-center py-6">로딩 중...</p>
+          ) : shops.length === 0 ? (
+            <p className="text-xs text-[#64748B] text-center py-6">등록된 플라워샵이 없습니다.</p>
+          ) : (
+            <div className="space-y-3">
+              {shops.map((shop) => (
+                <div
+                  key={shop.id}
+                  className="p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl flex items-center justify-between gap-3 shadow-sm"
+                >
+                  {editingShopId === shop.id ? (
+                    <div className="flex-1 flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        className="flex-1 min-h-[42px] h-[42px] px-3 border border-[#E2E8F0] rounded-xl text-sm bg-white"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveEdit(shop.id)}
+                          className="px-4 min-h-[42px] h-[42px] bg-[#059669] text-white text-xs font-semibold rounded-xl hover:bg-[#047857] transition"
+                        >
+                          수정 내용 저장
+                        </button>
+                        <button
+                          onClick={() => setEditingShopId(null)}
+                          className="px-4 min-h-[42px] h-[42px] bg-slate-200 text-[#0F172A] text-xs font-semibold rounded-xl hover:bg-slate-300 transition"
+                        >
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-sm text-[#0F172A]">{shop.name}</span>
+                      <button
+                        onClick={() => handleStartEdit(shop)}
+                        className="px-4 min-h-[40px] h-[40px] border border-[#E2E8F0] text-[#0F172A] text-xs font-semibold rounded-xl hover:bg-white transition"
+                      >
+                        이름 수정
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
