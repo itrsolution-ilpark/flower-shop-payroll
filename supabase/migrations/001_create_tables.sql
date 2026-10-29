@@ -90,6 +90,5 @@ create policy "Deny direct access attendance" on attendance for all using (false
 drop policy if exists "Deny direct access auth_attempts" on auth_attempts;
 create policy "Deny direct access auth_attempts" on auth_attempts for all using (false);
 
--- 서비스 롤 전용 명시적 우회 및 auth_attempts 기록용 정책 보완
 drop policy if exists "Service role full access auth_attempts" on auth_attempts;
 create policy "Service role full access auth_attempts" on auth_attempts for all to service_role using (true) with check (true);
