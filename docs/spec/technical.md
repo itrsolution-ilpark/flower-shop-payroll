@@ -1,6 +1,6 @@
 # 플라워샵 근무 및 급여 관리 시스템 — 기술·데이터 설계
 
-> 문서 버전 v8 · 완성도 100% · 마지막 수정 2026. 10. 29. 11시 5분 28초
+> 문서 버전 v9 · 완성도 100% · 마지막 수정 2026. 10. 29. 11시 9분 23초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -22,14 +22,14 @@
 - `name` (text, 화원 이름, Not Null)
 - `created_at` (timestamp, 기본값 `now()`)
 
-#### 2. `staff` (직원 및 관리자 정보)
+#### 2. `staff` (직원 및 관리자 통합 정보)
 - `id` (uuid, Primary Key, 기본값 `gen_random_uuid()`)
 - `shop_id` (uuid, `shops.id` 외래키, On Delete Cascade, Not Null)
-- `name` (text, 직원 이름, Not Null)
+- `name` (text, 직원/관리자 이름, Not Null)
 - `pin_code` (text, 4자리 비밀번호, Not Null)
 - `hourly_wage` (integer, 시급, Not Null, 기본값 10000)
-- `is_admin` (boolean, 관리자 여부, 기본값 false)
-- `status` (text, 직원 상태: `pending` 대기, `active` 재직, `resigned` 퇴사, 기본값 `'pending'`)
+- `is_admin` (boolean, 관리자 여부, 기본값 false. 최초 관리자 등록 시 true로 설정되어 메인 화면 직원/관리자 선택 드롭다운에 노출됨)
+- `status` (text, 직원 상태: `pending` 대기, `active` 재직, `resigned` 퇴사, 기본값 `'pending'` - 단, 최초 관리자는 생성 시 바로 `active` 처리 가능)
 - `created_at` (timestamp, 기본값 `now()`)
 
 #### 3. `attendance` (출퇴근 기록)
@@ -42,7 +42,7 @@
 
 ### RLS(행 수준 보안) 정책
 - `shops` 테이블: SELECT, INSERT 누구나 가능.
-- `staff` 테이블: SELECT는 누구나 가능(화원별 로그인 드롭다운용), INSERT는 누구나 가능(회원가입/최초설정), UPDATE는 `is_admin=true` 관리자 또는 본인 허용.
+- `staff` 테이블: SELECT는 누구나 가능(화원별 로그인 드롭다운용으로 `is_admin` 여부와 상관없이 조회 허용), INSERT는 누구나 가능(회원가입/최초설정), UPDATE는 `is_admin=true` 관리자 또는 본인 허용.
 - `attendance` 테이블: `status='active'`인 본인 직원 또는 `is_admin=true` 관리자만 접근 허용.
 
 ## 2. 기술 스택과 폴더 구조
@@ -64,14 +64,14 @@ SUPABASE_SERVICE_ROLE_KEY=실제_슈퍼베이스_SERVICE_ROLE_KEY
 ```text
 src/
   app/
-    page.tsx (화원 선택 및 메인 로그인)
+    page.tsx (화원 선택 및 메인 로그인 - 관리자 포함 staff 리스트 연동)
     shop/
       register/page.tsx (화원 등록)
     signup/
       page.tsx (직원 회원가입)
     admin/
-      setup/page.tsx (화원별 최초 관리자 설정)
-      page.tsx (관리자 대시보드)
+      setup/page.tsx (화원별 최초 관리자 설정 - staff 테이블에 is_admin=true로 저장)
+      page.tsx (관리자 대시보드 - 기존 등록 관리자 내역 표시)
       attendance/page.tsx (근무 기록 관리)
     employee/
       dashboard/page.tsx (직원 마이페이지)
@@ -86,12 +86,14 @@ src/
 - **상태 제어**: `pending` 또는 `resigned` 상태의 직원은 로그인 및 출퇴근 등록 차단 및 안내 메시지 노출
 - **보안 및 예외 처리**: 
   - 화원별 관리자 설정(`/admin/setup`) 시, 이미 해당 화원에 `is_admin=true`인 직원이 존재하는지 서버 측에서 먼저 확인(Query)하고, 존재할 경우 400 Bad Request 및 안내 메시지("이미 해당 화원에 관리자가 존재합니다")를 반환하여 중복 등록 오류를 방지한다.
+  - 관리자 계정 생성 시 `staff` 테이블에 `is_admin=true` 및 `status='active'`로 저장하여, 메인 화면의 화원별 사용자 로그인 목록에 정상 노출되도록 보장한다.
   - PIN 번호 불일치, 필수 값 누락 시 명확한 인라인 에러 메시지 제공
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v9 | 2026. 10. 29. 11시 8분 30초 | 관리자 등록 시 발생하는 오류 방지 및 관리자 계정 노출 누락 문제를 해결하기 위해, 관리자 계정도 일반 직원과 동일하게 `is_admin=true` 플래그를 가진 `staff` 테이블의 레코드로 통합 관리하고, 메인 로그인/화원 선택 화면 및 관리자 로그인/설정 화면의 로직을 보완했습니다. |
 | v8 | 2026. 10. 29. 11시 4분 26초 | 관리자 등록 중 발생하는 오류(중복 등록 방지, 화원별 관리자 존재 여부 체크 등)에 대한 예외 처리 및 안정성 강화 가이드를 문서에 반영 |
 | v7 | 2026. 10. 29. 11시 1분 28초 | 최종 감수: 최종 감수 완료: 모든 섹션의 일관성을 맞추고 수용 기준 및 테스트 시나리오를 구체화함 |
 | v6 | 2026. 10. 29. 11시 1분 10초 | 다중 화원(매장) 지원 기능 추가: 화원(플라워샵) 마스터 테이블 도입, 화원 선택 후 직원 로그인 및 관리자 접속 구조로 개편, 비밀번호 확인(Validation) 절차 명시 |
