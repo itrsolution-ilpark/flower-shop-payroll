@@ -36,7 +36,7 @@ function SignupContent() {
         .order("name", { ascending: true });
 
       if (error) {
-        console.error("화원 목록 조회 오류:", error);
+        console.error("플라워샵 목록 조회 오류:", error);
       } else if (data) {
         setShops(data);
         if (!selectedShopId && data.length > 0) {
@@ -55,7 +55,7 @@ function SignupContent() {
     setErrorMsg("");
 
     if (!selectedShopId) {
-      setErrorMsg("화원을 선택해주세요.");
+      setErrorMsg("플라워샵을 선택해주세요.");
       return;
     }
 
@@ -121,14 +121,14 @@ function SignupContent() {
           직원 회원가입 화면
         </h1>
         <p className="text-sm text-gray-600">
-          화원을 선택하고 정보를 입력하여 가입하세요. (PIN 2회 입력 검증)
+          플라워샵을 선택하고 정보를 입력하여 가입하세요. (PIN 2회 입력 검증)
         </p>
       </div>
 
       <form onSubmit={handleSignup} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-textColor mb-2">
-            화원 선택
+            플라워샵 선택
           </label>
           <select
             value={selectedShopId}

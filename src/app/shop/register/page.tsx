@@ -16,7 +16,7 @@ export default function ShopRegisterPage() {
     setErrorMsg("");
 
     if (!name.trim()) {
-      setErrorMsg("화원 이름을 입력해주세요.");
+      setErrorMsg("플라워샵 이름을 입력해주세요.");
       return;
     }
 
@@ -30,17 +30,17 @@ export default function ShopRegisterPage() {
         .single();
 
       if (error || !data) {
-        console.error("화원 등록 오류:", error);
-        setErrorMsg("화원 등록 중 오류가 발생했습니다.");
+        console.error("플라워샵 등록 오류:", error);
+        setErrorMsg("플라워샵 등록 중 오류가 발생했습니다.");
         setLoading(false);
         return;
       }
 
-      alert("화원이 성공적으로 등록되었습니다. 해당 화원의 관리자 계정을 설정해주세요.");
+      alert("플라워샵이 성공적으로 등록되었습니다. 해당 플라워샵의 관리자 계정을 설정해주세요.");
       router.push(`/admin/setup?shop_id=${data.id}`);
     } catch (err) {
       console.error("예외 발생:", err);
-      setErrorMsg("화원 등록 처리 중 오류가 발생했습니다.");
+      setErrorMsg("플라워샵 등록 처리 중 오류가 발생했습니다.");
       setLoading(false);
     }
   };
@@ -48,16 +48,16 @@ export default function ShopRegisterPage() {
   return (
     <div className="flex flex-col flex-1 p-6 justify-center">
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold text-primary mb-2">화원 등록 화면</h1>
+        <h1 className="text-2xl font-bold text-primary mb-2">플라워샵 등록 화면</h1>
         <p className="text-sm text-gray-600">
-          새로운 플라워샵(화원)을 시스템에 등록합니다.
+          새로운 플라워샵을 시스템에 등록합니다.
         </p>
       </div>
 
       <form onSubmit={handleRegisterShop} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-textColor mb-2">
-            화원명
+            플라워샵명
           </label>
           <input
             type="text"

@@ -49,7 +49,7 @@ function AdminSetupContent() {
         .order("name", { ascending: true });
 
       if (shopError) {
-        console.error("화원 목록 조회 오류:", shopError);
+        console.error("플라워샵 목록 조회 오류:", shopError);
       } else if (shopData && shopData.length > 0) {
         setShops(shopData);
         
@@ -76,7 +76,7 @@ function AdminSetupContent() {
 
   const checkAdminForShop = async (shopId: string) => {
     try {
-      // 서버/DB 쿼리 정합성 체크: shop_id와 is_admin=true 조건을 정확히 매칭
+      // 샵별 고유 키(shop_id)와 is_admin=true 조건을 정확히 만족하도록 쿼리
       const { data, error } = await supabase
         .from("staff")
         .select("id, name, pin_code")
@@ -123,7 +123,7 @@ function AdminSetupContent() {
     setSuccessMsg("");
 
     if (!selectedShopId) {
-      setErrorMsg("화원을 선택해주세요.");
+      setErrorMsg("플라워샵을 선택해주세요.");
       return;
     }
 
@@ -166,7 +166,7 @@ function AdminSetupContent() {
           router.push("/");
         }, 1000);
       } else {
-        // 신규 등록 모드 (중복 체크 포함)
+        // 신규 등록 모드: 정확히 해당 shop_id에 속한 is_admin=true 계정 존재 여부만 체크
         const { data: existingCheck } = await supabase
           .from("staff")
           .select("id")
@@ -174,7 +174,7 @@ function AdminSetupContent() {
           .eq("is_admin", true);
 
         if (existingCheck && existingCheck.length > 0) {
-          setErrorMsg("이미 해당 화원에 관리자가 존재합니다.");
+          setErrorMsg("이미 해당 플라워샵에 관리자가 존재합니다.");
           return;
         }
 
@@ -191,11 +191,11 @@ function AdminSetupContent() {
 
         if (error) {
           console.error("관리자 등록 오류:", error);
-          setErrorMsg("이미 해당 화원에 관리자가 존재합니다.");
+          setErrorMsg("이미 해당 플라워샵에 관리자가 존재합니다.");
           return;
         }
 
-        alert("화원별 관리자 설정이 완료되었습니다.");
+        alert("플라워샵별 관리자 설정이 완료되었습니다.");
         router.push("/");
       }
     } catch (err) {
@@ -212,19 +212,19 @@ function AdminSetupContent() {
     <div className="flex flex-col flex-1 p-6 justify-center">
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold text-primary mb-2">
-          화원별 관리자 등록 화면
+          플라워샵별 관리자 등록 화면
         </h1>
         <p className="text-sm text-gray-600">
           {isEditMode
             ? "이미 등록된 관리자 내역입니다. 정보를 수정할 수 있습니다."
-            : "선택된 화원의 최초 관리자 계정을 등록합니다. (PIN 2회 입력 검증)"}
+            : "선택된 플라워샵의 최초 관리자 계정을 등록합니다. (PIN 2회 입력 검증)"}
         </p>
       </div>
 
       <form onSubmit={handleSetupAdmin} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-textColor mb-2">
-            선택된 화원 (수정 불가)
+            선택된 플라워샵 (수정 불가)
           </label>
           <div className="flex items-center">
             <select
@@ -241,7 +241,7 @@ function AdminSetupContent() {
             </select>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            * 초기 화면에서 선택한 화원이 고정되어 있습니다.
+            * 초기 화면에서 선택한 플라워샵이 고정되어 있습니다.
           </p>
         </div>
 

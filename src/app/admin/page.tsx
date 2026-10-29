@@ -135,7 +135,7 @@ export default function AdminDashboardPage() {
         <div className="flex justify-between items-center bg-background p-4 rounded-lg border border-secondary">
           <div>
             <h2 className="text-md font-bold text-textColor">월별 급여 집계표</h2>
-            <p className="text-xs text-gray-600">소속 화원 직원별 월별 근무 및 급여 현황</p>
+            <p className="text-xs text-gray-600">소속 플라워샵 직원별 월별 근무 및 급여 현황</p>
           </div>
           <div>
             <input

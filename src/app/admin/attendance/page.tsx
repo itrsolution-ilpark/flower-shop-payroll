@@ -93,7 +93,6 @@ export default function AdminAttendancePage() {
   const fetchAttendanceRecords = async (shopId: string) => {
     setLoading(true);
     try {
-      // 해당 화원의 직원 ID들 먼저 조회
       const { data: shopStaff } = await supabase
         .from("staff")
         .select("id")
