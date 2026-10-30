@@ -154,7 +154,7 @@ export default function MainPage() {
             <ShieldAlert className="w-3.5 h-3.5 text-slate-500" />
             시스템 관리자 접속
           </Link>
-        </div>
+        </section>
       </main>
     </div>
   );
