@@ -1,6 +1,6 @@
 "use server";
 
-import { getServiceSupabase } from "@/lib/supabase-server";
+import { query } from "@/lib/db";
 import { hashPin, isValidPinFormat } from "@/lib/hash";
 import { createSession } from "@/lib/session";
 
@@ -14,19 +14,17 @@ export interface ActionResult<T = unknown> {
  * 시스템 관리자 존재 여부 조회
  */
 export async function getSystemAdminCountAction(): Promise<number> {
-  const supabase = getServiceSupabase();
-  const { count, error } = await supabase
-    .from("system_admins")
-    .select("id", { count: "exact", head: true });
-
-  if (error) {
+  try {
+    const res = await query("SELECT COUNT(*)::int as count FROM system_admins");
+    if (!res.rows || res.rows.length === 0) return 0;
+    return res.rows[0].count || 0;
+  } catch {
     return 0;
   }
-  return count || 0;
 }
 
 /**
- * F-01: 시스템 관리자 최초 등록 (RLS 42501 차단 서버 액션)
+ * F-01: 시스템 관리자 최초 등록
  */
 export async function registerSystemAdminAction(
   name: string,
@@ -44,32 +42,34 @@ export async function registerSystemAdminAction(
     return { success: false, error: "비밀 확인이 일치하지 않습니다." };
   }
 
-  const supabase = getServiceSupabase();
+  try {
+    // 관리자가 이미 있는지 확인 (한 명만 허용)
+    const checkRes = await query("SELECT id FROM system_admins LIMIT 1");
+    if (checkRes.rows && checkRes.rows.length > 0) {
+      return { success: false, error: "이미 시스템 관리자가 등록되어 있습니다." };
+    }
 
-  // 관리자가 이미 있는지 확인 (한 명만 허용)
-  const { data: existing } = await supabase.from("system_admins").select("id").limit(1);
-  if (existing && existing.length > 0) {
-    return { success: false, error: "이미 시스템 관리자가 존재합니다." };
-  }
+    const pinHash = hashPin(pin);
+    const insertRes = await query(
+      "INSERT INTO system_admins (name, pin_hash) VALUES ($1, $2) RETURNING id, name",
+      [trimmedName, pinHash]
+    );
 
-  const pinHash = hashPin(pin);
-  const { data, error } = await supabase
-    .from("system_admins")
-    .insert([{ name: trimmedName, pin_hash: pinHash }])
-    .select("id, name")
-    .single();
+    const newAdmin = insertRes.rows[0];
+    if (!newAdmin) {
+      return { success: false, error: "시스템 관리자 등록에 실패했습니다." };
+    }
 
-  if (error || !data) {
+    await createSession({
+      role: "system_admin",
+      userId: newAdmin.id,
+      name: newAdmin.name,
+    });
+
+    return { success: true, data: newAdmin };
+  } catch {
     return { success: false, error: "시스템 관리자 등록에 실패했습니다." };
   }
-
-  await createSession({
-    role: "system_admin",
-    userId: data.id,
-    name: data.name,
-  });
-
-  return { success: true, data };
 }
 
 /**
@@ -84,25 +84,26 @@ export async function loginSystemAdminAction(
     return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
   }
 
-  const supabase = getServiceSupabase();
-  const pinHash = hashPin(pin);
+  try {
+    const pinHash = hashPin(pin);
+    const res = await query(
+      "SELECT id, name FROM system_admins WHERE name = $1 AND pin_hash = $2 LIMIT 1",
+      [trimmedName, pinHash]
+    );
 
-  const { data, error } = await supabase
-    .from("system_admins")
-    .select("id, name")
-    .eq("name", trimmedName)
-    .eq("pin_hash", pinHash)
-    .maybeSingle();
+    const admin = res.rows[0];
+    if (!admin) {
+      return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+    }
 
-  if (error || !data) {
+    await createSession({
+      role: "system_admin",
+      userId: admin.id,
+      name: admin.name,
+    });
+
+    return { success: true, data: admin };
+  } catch {
     return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
   }
-
-  await createSession({
-    role: "system_admin",
-    userId: data.id,
-    name: data.name,
-  });
-
-  return { success: true, data };
 }

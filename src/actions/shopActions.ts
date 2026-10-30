@@ -1,6 +1,6 @@
 "use server";
 
-import { getServiceSupabase } from "@/lib/supabase-server";
+import { query } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { ActionResult } from "./systemAdminActions";
 
@@ -14,32 +14,26 @@ export interface ShopSummary {
  * 전체 플라워샵 목록 및 재직 직원 수 조회
  */
 export async function getShopsAction(): Promise<ShopSummary[]> {
-  const supabase = getServiceSupabase();
-  const { data: shops, error: shopsErr } = await supabase
-    .from("shops")
-    .select("id, name")
-    .order("name", { ascending: true });
-
-  if (shopsErr || !shops) {
+  try {
+    const sql = `
+      SELECT 
+        s.id, 
+        s.name, 
+        COUNT(st.id) FILTER (WHERE st.status = 'active')::int AS "staffCount"
+      FROM shops s
+      LEFT JOIN staff st ON s.id = st.shop_id
+      GROUP BY s.id, s.name
+      ORDER BY s.name ASC
+    `;
+    const res = await query(sql);
+    return (res.rows || []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      staffCount: row.staffCount || 0,
+    }));
+  } catch {
     return [];
   }
-
-  // 각 플라워샵의 재직(active) 직원 수 조회 (대표 관리자는 staff에 없음)
-  const { data: staffData } = await supabase
-    .from("staff")
-    .select("shop_id")
-    .eq("status", "active");
-
-  const countMap: Record<string, number> = {};
-  (staffData || []).forEach((row) => {
-    countMap[row.shop_id] = (countMap[row.shop_id] || 0) + 1;
-  });
-
-  return shops.map((s) => ({
-    id: s.id,
-    name: s.name,
-    staffCount: countMap[s.id] || 0,
-  }));
 }
 
 /**
@@ -56,30 +50,27 @@ export async function createShopAction(name: string): Promise<ActionResult<{ id:
     return { success: false, error: "플라워샵 이름을 입력해주세요." };
   }
 
-  const supabase = getServiceSupabase();
+  try {
+    // 중복 검사
+    const existing = await query("SELECT id FROM shops WHERE name = $1 LIMIT 1", [trimmed]);
+    if (existing.rows && existing.rows.length > 0) {
+      return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
+    }
 
-  // 중복 검사
-  const { data: existing } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("name", trimmed)
-    .maybeSingle();
+    const insertRes = await query(
+      "INSERT INTO shops (name) VALUES ($1) RETURNING id, name",
+      [trimmed]
+    );
 
-  if (existing) {
+    const shop = insertRes.rows[0];
+    if (!shop) {
+      return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
+    }
+
+    return { success: true, data: shop };
+  } catch {
     return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
   }
-
-  const { data, error } = await supabase
-    .from("shops")
-    .insert([{ name: trimmed }])
-    .select("id, name")
-    .single();
-
-  if (error || !data) {
-    return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
-  }
-
-  return { success: true, data };
 }
 
 /**
@@ -96,28 +87,24 @@ export async function updateShopAction(id: string, newName: string): Promise<Act
     return { success: false, error: "플라워샵 이름을 입력해주세요." };
   }
 
-  const supabase = getServiceSupabase();
+  try {
+    // 이름 중복 검사 (본인 제외)
+    const existing = await query(
+      "SELECT id FROM shops WHERE name = $1 AND id <> $2 LIMIT 1",
+      [trimmed, id]
+    );
 
-  // 이름 중복 검사 (본인 제외)
-  const { data: existing } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("name", trimmed)
-    .neq("id", id)
-    .maybeSingle();
+    if (existing.rows && existing.rows.length > 0) {
+      return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
+    }
 
-  if (existing) {
+    const updateRes = await query("UPDATE shops SET name = $1 WHERE id = $2", [trimmed, id]);
+    if ((updateRes.rowCount ?? 0) === 0) {
+      return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
+    }
+
+    return { success: true };
+  } catch {
     return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
   }
-
-  const { error } = await supabase
-    .from("shops")
-    .update({ name: trimmed })
-    .eq("id", id);
-
-  if (error) {
-    return { success: false, error: "이미 등록된 플라워샵 이름입니다." };
-  }
-
-  return { success: true };
 }

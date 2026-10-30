@@ -1,26 +1,69 @@
 "use server";
 
-import { getServiceSupabase } from "@/lib/supabase-server";
-import { hashPin, isValidPinFormat } from "@/lib/hash";
-import { createSession, getSession } from "@/lib/session";
+import { query } from "@/lib/db";
+import { hashPin, isValidPinFormat, verifyPin } from "@/lib/hash";
+import { createSession } from "@/lib/session";
 import { ActionResult } from "./systemAdminActions";
 
-export interface StaffListItem {
+export interface CompensationData {
+  id?: string;
+  staff_id?: string;
+  pay_type: "hourly" | "monthly";
+  amount_krw: number;
+  effective_from: string;
+  created_at?: string;
+}
+
+export interface StaffItem {
   id: string;
   shop_id: string;
   name: string;
   status: "pending" | "active" | "resigned";
   created_at: string;
   resigned_at?: string | null;
-  compensation?: {
-    pay_type: "hourly" | "monthly";
-    amount_krw: number;
-    effective_from: string;
-  }[];
+  compensations?: CompensationData[];
 }
 
 /**
- * F-05: 플라워샵 직원 가입 신청 (pending 상태 등록)
+ * 로그인 차단 여부 검사 (계정 식별자별 최근 15분 동안 5회 실패 시 15분 차단)
+ */
+async function isAuthBlocked(identityHash: string): Promise<boolean> {
+  try {
+    const res = await query(
+      `SELECT attempted_at, succeeded
+       FROM auth_attempts
+       WHERE identity_hash = $1
+         AND attempted_at >= NOW() - INTERVAL '15 minutes'
+       ORDER BY attempted_at DESC
+       LIMIT 5`,
+      [identityHash]
+    );
+
+    if (res.rows && res.rows.length >= 5) {
+      const hasSuccess = res.rows.some((r) => r.succeeded === true);
+      if (!hasSuccess) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function recordAuthAttempt(identityHash: string, succeeded: boolean): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO auth_attempts (identity_hash, succeeded) VALUES ($1, $2)`,
+      [identityHash, succeeded]
+    );
+  } catch {
+    // 무시
+  }
+}
+
+/**
+ * F-05: 직원 가입 신청
  */
 export async function applyStaffAction(
   shopId: string,
@@ -29,7 +72,7 @@ export async function applyStaffAction(
   confirmPin: string
 ): Promise<ActionResult> {
   const trimmedName = name.trim();
-  if (!trimmedName) {
+  if (!shopId || !trimmedName) {
     return { success: false, error: "직원 이름을 입력해주세요." };
   }
   if (!isValidPinFormat(pin)) {
@@ -39,54 +82,191 @@ export async function applyStaffAction(
     return { success: false, error: "비밀 확인이 일치하지 않습니다." };
   }
 
-  const supabase = getServiceSupabase();
+  try {
+    const existing = await query(
+      "SELECT id FROM staff WHERE shop_id = $1 AND name = $2 LIMIT 1",
+      [shopId, trimmedName]
+    );
+    if (existing.rows && existing.rows.length > 0) {
+      return { success: false, error: "이미 등록된 직원 이름입니다." };
+    }
 
-  // 해당 플라워샵 내 이름 중복 체크
-  const { data: existing } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("shop_id", shopId)
-    .eq("name", trimmedName)
-    .maybeSingle();
+    const pinHash = hashPin(pin);
+    const insertRes = await query(
+      `INSERT INTO staff (shop_id, name, pin_hash, status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING id, name, status`,
+      [shopId, trimmedName, pinHash]
+    );
 
-  if (existing) {
-    return { success: false, error: "이미 등록된 이름입니다." };
+    return { success: true, data: insertRes.rows[0] };
+  } catch {
+    return { success: false, error: "가입 신청 중 오류가 발생했습니다." };
   }
-
-  const pinHash = hashPin(pin);
-  const { data, error } = await supabase
-    .from("staff")
-    .insert([
-      {
-        shop_id: shopId,
-        name: trimmedName,
-        pin_hash: pinHash,
-        status: "pending",
-      },
-    ])
-    .select("id, name")
-    .single();
-
-  if (error || !data) {
-    return { success: false, error: "이미 등록된 이름입니다." };
-  }
-
-  return { success: true, data };
 }
 
 /**
- * F-07: 직원 로그인 목록 조회 (대표 관리자는 staff에 없으며 active 상태만 반환)
+ * 플라워샵의 전체 직원 목록 (급여 조건 이력 포함)
  */
-export async function getActiveStaffListAction(shopId: string): Promise<{ id: string; name: string }[]> {
-  const supabase = getServiceSupabase();
-  const { data } = await supabase
-    .from("staff")
-    .select("id, name")
-    .eq("shop_id", shopId)
-    .eq("status", "active")
-    .order("name", { ascending: true });
+export async function getShopStaffAction(shopId: string): Promise<StaffItem[]> {
+  try {
+    const staffRes = await query(
+      `SELECT id, shop_id, name, status, created_at, resigned_at
+       FROM staff
+       WHERE shop_id = $1
+       ORDER BY created_at DESC`,
+      [shopId]
+    );
 
-  return data || [];
+    const staffList: StaffItem[] = staffRes.rows || [];
+    if (staffList.length === 0) return [];
+
+    const compRes = await query(
+      `SELECT id, staff_id, pay_type, amount_krw, TO_CHAR(effective_from, 'YYYY-MM-DD') AS effective_from, created_at
+       FROM compensation
+       WHERE staff_id = ANY($1::uuid[])
+       ORDER BY effective_from DESC`,
+      [staffList.map((s) => s.id)]
+    );
+
+    const compMap: Record<string, CompensationData[]> = {};
+    (compRes.rows || []).forEach((row) => {
+      if (!compMap[row.staff_id]) compMap[row.staff_id] = [];
+      compMap[row.staff_id].push({
+        id: row.id,
+        staff_id: row.staff_id,
+        pay_type: row.pay_type,
+        amount_krw: row.amount_krw,
+        effective_from: row.effective_from,
+        created_at: row.created_at,
+      });
+    });
+
+    return staffList.map((s) => ({
+      ...s,
+      compensations: compMap[s.id] || [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * F-07: 직원 로그인용 재직(active) 직원 목록 조회 (대표 관리자는 제외됨)
+ */
+export async function getActiveStaffListAction(
+  shopId: string
+): Promise<{ id: string; name: string }[]> {
+  try {
+    const res = await query(
+      `SELECT id, name
+       FROM staff
+       WHERE shop_id = $1 AND status = 'active'
+       ORDER BY name ASC`,
+      [shopId]
+    );
+    return res.rows || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * F-06: 직원 승인 및 급여 조건 설정
+ */
+export async function approveStaffAction(
+  staffId: string,
+  payType: "hourly" | "monthly",
+  amountKrw: number,
+  effectiveFrom: string
+): Promise<ActionResult> {
+  if (amountKrw <= 0) {
+    return { success: false, error: "급여 금액은 0보다 커야 합니다." };
+  }
+  if (!effectiveFrom) {
+    return { success: false, error: "적용 시작일을 입력해주세요." };
+  }
+
+  try {
+    await query("UPDATE staff SET status = 'active' WHERE id = $1", [staffId]);
+
+    await query(
+      `INSERT INTO compensation (staff_id, pay_type, amount_krw, effective_from)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (staff_id, effective_from)
+       DO UPDATE SET pay_type = EXCLUDED.pay_type, amount_krw = EXCLUDED.amount_krw`,
+      [staffId, payType, amountKrw, effectiveFrom]
+    );
+
+    return { success: true };
+  } catch {
+    return { success: false, error: "직원 승인 처리에 실패했습니다." };
+  }
+}
+
+/**
+ * F-06: 직원 퇴사 처리
+ */
+export async function resignStaffAction(staffId: string): Promise<ActionResult> {
+  try {
+    await query(
+      "UPDATE staff SET status = 'resigned', resigned_at = NOW() WHERE id = $1",
+      [staffId]
+    );
+    return { success: true };
+  } catch {
+    return { success: false, error: "퇴사 처리에 실패했습니다." };
+  }
+}
+
+/**
+ * 급여 조건 추가 및 갱신
+ */
+export async function updateCompensationAction(
+  staffId: string,
+  payType: "hourly" | "monthly",
+  amountKrw: number,
+  effectiveFrom: string
+): Promise<ActionResult> {
+  if (amountKrw <= 0) {
+    return { success: false, error: "급여 금액은 0보다 커야 합니다." };
+  }
+  if (!effectiveFrom) {
+    return { success: false, error: "적용 시작일을 입력해주세요." };
+  }
+
+  try {
+    await query(
+      `INSERT INTO compensation (staff_id, pay_type, amount_krw, effective_from)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (staff_id, effective_from)
+       DO UPDATE SET pay_type = EXCLUDED.pay_type, amount_krw = EXCLUDED.amount_krw`,
+      [staffId, payType, amountKrw, effectiveFrom]
+    );
+    return { success: true };
+  } catch {
+    return { success: false, error: "급여 조건 저장에 실패했습니다." };
+  }
+}
+
+export const addCompensationAction = updateCompensationAction;
+
+/**
+ * 직원 급여 조건 목록 조회
+ */
+export async function getStaffCompensationsAction(staffId: string): Promise<CompensationData[]> {
+  try {
+    const res = await query(
+      `SELECT id, staff_id, pay_type, amount_krw, TO_CHAR(effective_from, 'YYYY-MM-DD') AS effective_from
+       FROM compensation
+       WHERE staff_id = $1
+       ORDER BY effective_from ASC`,
+      [staffId]
+    );
+    return res.rows || [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -96,209 +276,86 @@ export async function loginStaffAction(
   shopId: string,
   name: string,
   pin: string
-): Promise<ActionResult<{ id: string; name: string; shopId: string }>> {
+): Promise<ActionResult<{ id: string; name: string; shop_id: string }>> {
   const trimmedName = name.trim();
-  if (!trimmedName || !isValidPinFormat(pin)) {
+  if (!shopId || !trimmedName || !isValidPinFormat(pin)) {
     return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
   }
 
-  const supabase = getServiceSupabase();
-  const pinHash = hashPin(pin);
-
-  const { data, error } = await supabase
-    .from("staff")
-    .select("id, name, status, shop_id")
-    .eq("shop_id", shopId)
-    .eq("name", trimmedName)
-    .eq("pin_hash", pinHash)
-    .maybeSingle();
-
-  if (error || !data) {
-    return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+  const identityHash = `staff:${shopId}:${trimmedName}`;
+  const blocked = await isAuthBlocked(identityHash);
+  if (blocked) {
+    return { success: false, error: "로그인 시도가 초과되었습니다. 15분 후 다시 시도해주세요." };
   }
 
-  if (data.status !== "active") {
+  try {
+    const res = await query(
+      `SELECT id, shop_id, name, pin_hash, status
+       FROM staff
+       WHERE shop_id = $1 AND name = $2 LIMIT 1`,
+      [shopId, trimmedName]
+    );
+
+    const staff = res.rows[0];
+    if (!staff || staff.status !== "active") {
+      await recordAuthAttempt(identityHash, false);
+      return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+    }
+
+    const isValid = verifyPin(pin, staff.pin_hash);
+    if (!isValid) {
+      await recordAuthAttempt(identityHash, false);
+      return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+    }
+
+    await recordAuthAttempt(identityHash, true);
+
+    await createSession({
+      role: "employee",
+      userId: staff.id,
+      name: staff.name,
+      shopId: staff.shop_id,
+    });
+
+    return {
+      success: true,
+      data: {
+        id: staff.id,
+        name: staff.name,
+        shop_id: staff.shop_id,
+      },
+    };
+  } catch {
     return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
   }
-
-  await createSession({
-    role: "employee",
-    userId: data.id,
-    name: data.name,
-    shopId: data.shop_id,
-  });
-
-  return { success: true, data: { id: data.id, name: data.name, shopId: data.shop_id } };
 }
 
 /**
  * 직원 본인 비밀 변경
  */
-export async function changeStaffSecretAction(
-  currentPin: string,
+export async function changeStaffPinAction(
+  staffId: string,
   newPin: string,
-  confirmNewPin: string
+  confirmPin: string
 ): Promise<ActionResult> {
-  const session = await getSession();
-  if (!session || session.role !== "employee") {
-    return { success: false, error: "로그인이 필요합니다." };
-  }
-
-  if (!isValidPinFormat(currentPin)) {
-    return { success: false, error: "현재 비밀을 확인해 주세요." };
-  }
   if (!isValidPinFormat(newPin)) {
-    return { success: false, error: "새 비밀은 숫자 4자리여야 합니다." };
+    return { success: false, error: "비밀은 숫자 4자리여야 합니다." };
   }
-  if (newPin !== confirmNewPin) {
+  if (newPin !== confirmPin) {
     return { success: false, error: "비밀 확인이 일치하지 않습니다." };
   }
 
-  const supabase = getServiceSupabase();
-  const currentHash = hashPin(currentPin);
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("id", session.userId)
-    .eq("pin_hash", currentHash)
-    .maybeSingle();
-
-  if (!staff) {
-    return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+  try {
+    const newHash = hashPin(newPin);
+    const res = await query(
+      "UPDATE staff SET pin_hash = $1 WHERE id = $2 RETURNING id",
+      [newHash, staffId]
+    );
+    if (!res.rows || res.rows.length === 0) {
+      return { success: false, error: "직원 정보를 찾을 수 없습니다." };
+    }
+    return { success: true };
+  } catch {
+    return { success: false, error: "비밀 변경 중 오류가 발생했습니다." };
   }
-
-  const newHash = hashPin(newPin);
-  const { error } = await supabase
-    .from("staff")
-    .update({ pin_hash: newHash })
-    .eq("id", session.userId);
-
-  if (error) {
-    return { success: false, error: "비밀 변경에 실패했습니다." };
-  }
-
-  return { success: true };
-}
-
-/**
- * F-06: 관리자 직원 승인 및 급여 조건 설정
- */
-export async function approveStaffAction(
-  staffId: string,
-  payType: "hourly" | "monthly",
-  amountKrw: number,
-  effectiveFrom: string
-): Promise<ActionResult> {
-  const session = await getSession();
-  if (!session || session.role !== "shop_admin") {
-    return { success: false, error: "관리자 권한이 필요합니다." };
-  }
-
-  if (!amountKrw || amountKrw <= 0) {
-    return { success: false, error: "유효한 급여 금액을 입력해주세요." };
-  }
-  if (!effectiveFrom) {
-    return { success: false, error: "적용 시작일을 선택해주세요." };
-  }
-
-  const supabase = getServiceSupabase();
-
-  // 직원 active 상태로 변경
-  const { error: staffErr } = await supabase
-    .from("staff")
-    .update({ status: "active" })
-    .eq("id", staffId)
-    .eq("shop_id", session.shopId);
-
-  if (staffErr) {
-    return { success: false, error: "직원 승인 처리에 실패했습니다." };
-  }
-
-  // 급여 조건 등록/업데이트
-  const { error: compErr } = await supabase.from("compensation").upsert(
-    [
-      {
-        staff_id: staffId,
-        pay_type: payType,
-        amount_krw: amountKrw,
-        effective_from: effectiveFrom,
-      },
-    ],
-    { onConflict: "staff_id,effective_from" }
-  );
-
-  if (compErr) {
-    return { success: false, error: "급여 조건 저장 중 오류가 발생했습니다." };
-  }
-
-  return { success: true };
-}
-
-/**
- * F-06: 직원 재직/퇴사 상태 변경
- */
-export async function updateStaffStatusAction(
-  staffId: string,
-  newStatus: "active" | "resigned"
-): Promise<ActionResult> {
-  const session = await getSession();
-  if (!session || session.role !== "shop_admin") {
-    return { success: false, error: "관리자 권한이 필요합니다." };
-  }
-
-  const supabase = getServiceSupabase();
-  const updateData: Record<string, unknown> = { status: newStatus };
-  if (newStatus === "resigned") {
-    updateData.resigned_at = new Date().toISOString();
-  }
-
-  const { error } = await supabase
-    .from("staff")
-    .update(updateData)
-    .eq("id", staffId)
-    .eq("shop_id", session.shopId);
-
-  if (error) {
-    return { success: false, error: "직원 상태 변경에 실패했습니다." };
-  }
-
-  return { success: true };
-}
-
-/**
- * 관리자 대시보드용 직원 목록 및 급여 이력 조회
- */
-export async function getShopStaffListAction(shopId: string): Promise<StaffListItem[]> {
-  const supabase = getServiceSupabase();
-  const { data: staffList } = await supabase
-    .from("staff")
-    .select("id, shop_id, name, status, created_at, resigned_at")
-    .eq("shop_id", shopId)
-    .order("created_at", { ascending: false });
-
-  if (!staffList || staffList.length === 0) return [];
-
-  const staffIds = staffList.map((s) => s.id);
-  const { data: compList } = await supabase
-    .from("compensation")
-    .select("staff_id, pay_type, amount_krw, effective_from")
-    .in("staff_id", staffIds)
-    .order("effective_from", { ascending: false });
-
-  const compMap: Record<string, { pay_type: "hourly" | "monthly"; amount_krw: number; effective_from: string }[]> = {};
-  (compList || []).forEach((c) => {
-    if (!compMap[c.staff_id]) compMap[c.staff_id] = [];
-    compMap[c.staff_id].push({
-      pay_type: c.pay_type as "hourly" | "monthly",
-      amount_krw: c.amount_krw,
-      effective_from: c.effective_from,
-    });
-  });
-
-  return staffList.map((st) => ({
-    ...st,
-    status: st.status as "pending" | "active" | "resigned",
-    compensation: compMap[st.id] || [],
-  }));
 }

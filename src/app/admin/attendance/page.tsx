@@ -3,10 +3,13 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabaseClient";
 import StatusBadge from "@/components/StatusBadge";
-import { ArrowLeft, Calendar, Save, Check } from "lucide-react";
-import { format, parseISO, getDaysInMonth } from "date-fns";
+import { ArrowLeft, Calendar, Save } from "lucide-react";
+import { format, getDaysInMonth } from "date-fns";
+import { getShopsAction } from "@/actions/shopActions";
+import { getShopStaffAction, getStaffCompensationsAction, StaffItem, CompensationData } from "@/actions/staffActions";
+import { getStaffAttendanceMonthAction, saveAttendanceAction, AttendanceItem } from "@/actions/attendanceActions";
+import { calculateStaffMonthlyEarnings } from "@/lib/payroll";
 
 interface StaffUser {
   id: string;
@@ -15,37 +18,16 @@ interface StaffUser {
   is_admin: boolean;
 }
 
-interface StaffMember {
-  id: string;
-  name: string;
-  status: string;
-}
-
-interface CompensationItem {
-  pay_type: "hourly" | "monthly";
-  amount_krw: number;
-  effective_from: string;
-}
-
-interface AttendanceRecord {
-  id?: string;
-  staff_id: string;
-  work_date: string;
-  clock_in: string;
-  clock_out: string;
-  total_minutes: number;
-}
-
 export default function AdminAttendancePage() {
   const router = useRouter();
   const [user, setUser] = useState<StaffUser | null>(null);
   const [shopName, setShopName] = useState<string>("");
-  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [staffList, setStaffList] = useState<StaffItem[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), "yyyy-MM"));
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
 
-  const [compensations, setCompensations] = useState<Record<string, CompensationItem[]>>({});
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceRecord>>({}); // date -> record
+  const [compensations, setCompensations] = useState<Record<string, CompensationData[]>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceItem>>({}); // date -> record
 
   // 수정 중인 시급 근무 기록 상태 (date -> {clockIn, clockOut})
   const [editAttendance, setEditAttendance] = useState<Record<string, { clockIn: string; clockOut: string }>>({});
@@ -54,18 +36,22 @@ export default function AdminAttendancePage() {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const raw = localStorage.getItem("flower_shop_user");
+    const raw = typeof window !== "undefined" ? localStorage.getItem("flower_shop_user") : null;
     if (!raw) {
       router.push("/");
       return;
     }
-    const parsed: StaffUser = JSON.parse(raw);
-    if (!parsed.is_admin) {
-      router.push("/employee/dashboard");
-      return;
+    try {
+      const parsed: StaffUser = JSON.parse(raw);
+      if (!parsed.is_admin) {
+        router.push("/employee/dashboard");
+        return;
+      }
+      setUser(parsed);
+      fetchShopAndStaff(parsed.shop_id);
+    } catch {
+      router.push("/");
     }
-    setUser(parsed);
-    fetchShopAndStaff(parsed.shop_id);
   }, [router]);
 
   useEffect(() => {
@@ -77,28 +63,19 @@ export default function AdminAttendancePage() {
   const fetchShopAndStaff = async (shopId: string) => {
     setLoading(true);
     try {
-      const { data: shopData } = await supabase
-        .from("shops")
-        .select("name")
-        .eq("id", shopId)
-        .single();
-
-      if (shopData) {
-        setShopName(shopData.name);
+      const shops = await getShopsAction();
+      const currentShop = shops.find((s) => s.id === shopId);
+      if (currentShop) {
+        setShopName(currentShop.name);
       }
 
-      const { data: staffData } = await supabase
-        .from("staff")
-        .select("id, name, status")
-        .eq("shop_id", shopId)
-        .order("name", { ascending: true });
-
-      if (staffData && staffData.length > 0) {
-        setStaffList(staffData);
-        setSelectedStaffId(staffData[0].id);
+      const list = await getShopStaffAction(shopId);
+      setStaffList(list);
+      if (list.length > 0) {
+        setSelectedStaffId(list[0].id);
       }
-    } catch (err) {
-      console.error("예외 발생:", err);
+    } catch {
+      // 오류 처리
     } finally {
       setLoading(false);
     }
@@ -107,32 +84,16 @@ export default function AdminAttendancePage() {
   const fetchStaffDetails = async (staffId: string) => {
     try {
       // 1. 급여 조건 이력 조회
-      const { data: compData } = await supabase
-        .from("compensation")
-        .select("*")
-        .eq("staff_id", staffId)
-        .order("effective_from", { ascending: true });
-
-      const compList = compData || [];
+      const compList = await getStaffCompensationsAction(staffId);
       setCompensations((prev) => ({ ...prev, [staffId]: compList }));
 
       // 2. 해당 월 출퇴근 기록 조회 (시급 직원용)
-      const [year, month] = selectedMonth.split("-").map(Number);
-      const startDate = `${selectedMonth}-01`;
-      const lastDay = getDaysInMonth(new Date(year, month - 1));
-      const endDate = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
+      const attList = await getStaffAttendanceMonthAction(staffId, selectedMonth);
 
-      const { data: attData } = await supabase
-        .from("attendance")
-        .select("*")
-        .eq("staff_id", staffId)
-        .gte("work_date", startDate)
-        .lte("work_date", endDate);
-
-      const map: Record<string, AttendanceRecord> = {};
+      const map: Record<string, AttendanceItem> = {};
       const editMap: Record<string, { clockIn: string; clockOut: string }> = {};
 
-      (attData || []).forEach((att) => {
+      attList.forEach((att) => {
         map[att.work_date] = att;
         editMap[att.work_date] = {
           clockIn: att.clock_in.slice(0, 5),
@@ -144,59 +105,6 @@ export default function AdminAttendancePage() {
       setEditAttendance(editMap);
     } catch (err) {
       console.error("예외 발생:", err);
-    }
-  };
-
-  // 특정 일자에 유효한 급여 조건 반환
-  const getEffectiveCompForDate = (staffId: string, dateStr: string) => {
-    const list = compensations[staffId] || [];
-    let valid = null;
-    for (const c of list) {
-      if (c.effective_from <= dateStr) {
-        valid = c;
-      }
-    }
-    return valid;
-  };
-
-  // 급여 계산 함수 (SPEC 정확히 반영)
-  const calculateStaffMonthlyEarnings = (staffId: string, targetMonth: string) => {
-    const list = compensations[staffId] || [];
-    if (list.length === 0) return { error: "급여 적용 조건이 없어 계산할 수 없습니다.", amount: 0, totalMinutes: 0 };
-
-    const [year, month] = targetMonth.split("-").map(Number);
-    const totalDaysInMonth = getDaysInMonth(new Date(year, month - 1));
-
-    // 최신 급여 조건 확인 (시급인지 월급인지)
-    const latestComp = list[list.length - 1];
-
-    if (latestComp.pay_type === "hourly") {
-      let totalMins = 0;
-      let totalPay = 0;
-
-      Object.values(attendanceMap).forEach((att) => {
-        const comp = getEffectiveCompForDate(staffId, att.work_date);
-        if (comp && comp.pay_type === "hourly") {
-          const mins = att.total_minutes || 0;
-          totalMins += mins;
-          totalPay += Math.round((mins / 60) * comp.amount_krw);
-        }
-      });
-
-      return { error: null, amount: totalPay, totalMinutes: totalMins, payType: "hourly" };
-    } else {
-      // 월급 직원 일할 계산
-      let weightedMonthlyPay = 0;
-
-      for (let day = 1; day <= totalDaysInMonth; day++) {
-        const dateStr = `${targetMonth}-${String(day).padStart(2, "0")}`;
-        const comp = getEffectiveCompForDate(staffId, dateStr);
-        if (comp && comp.pay_type === "monthly") {
-          weightedMonthlyPay += comp.amount_krw / totalDaysInMonth;
-        }
-      }
-
-      return { error: null, amount: Math.round(weightedMonthlyPay), totalMinutes: 0, payType: "monthly" };
     }
   };
 
@@ -217,7 +125,7 @@ export default function AdminAttendancePage() {
 
     const [inH, inM] = item.clockIn.split(":").map(Number);
     const [outH, outM] = item.clockOut.split(":").map(Number);
-    const totalMinutes = (outH * 60 + outM) - (inH * 60 + inM);
+    const totalMinutes = outH * 60 + outM - (inH * 60 + inM);
 
     if (totalMinutes <= 0) {
       setErrorMsg("퇴근 시간은 출근 시간보다 늦어야 합니다.");
@@ -225,29 +133,21 @@ export default function AdminAttendancePage() {
     }
 
     try {
-      const { error } = await supabase.from("attendance").upsert(
-        [
-          {
-            staff_id: selectedStaffId,
-            work_date: workDate,
-            clock_in: item.clockIn + ":00",
-            clock_out: item.clockOut + ":00",
-            total_minutes: totalMinutes,
-            updated_at: new Date().toISOString(),
-          },
-        ],
-        { onConflict: "staff_id,work_date" }
+      const res = await saveAttendanceAction(
+        selectedStaffId,
+        workDate,
+        item.clockIn,
+        item.clockOut
       );
 
-      if (error) {
-        setErrorMsg("근무 기록 저장 중 오류가 발생했습니다.");
+      if (!res.success) {
+        setErrorMsg(res.error || "근무 기록 저장 중 오류가 발생했습니다.");
         return;
       }
 
       setSuccessMsg(`${workDate} 근무 기록이 저장되었습니다.`);
       fetchStaffDetails(selectedStaffId);
-    } catch (err) {
-      console.error("예외 발생:", err);
+    } catch {
       setErrorMsg("저장 중 오류가 발생했습니다.");
     }
   };
@@ -255,7 +155,19 @@ export default function AdminAttendancePage() {
   if (!user) return null;
 
   const selectedStaff = staffList.find((s) => s.id === selectedStaffId);
-  const earnings = selectedStaffId ? calculateStaffMonthlyEarnings(selectedStaffId, selectedMonth) : { error: "급여 적용 조건이 없어 계산할 수 없습니다.", amount: 0, totalMinutes: 0 };
+  const activeCompList = compensations[selectedStaffId] || [];
+  const earnings = selectedStaffId
+    ? calculateStaffMonthlyEarnings(
+        activeCompList,
+        Object.values(attendanceMap),
+        selectedMonth
+      )
+    : {
+        error: "급여 적용 조건이 없어 계산할 수 없습니다.",
+        amount: 0,
+        totalMinutes: 0,
+        payType: null,
+      };
 
   const [year, month] = selectedMonth.split("-").map(Number);
   const totalDaysInMonth = getDaysInMonth(new Date(year, month - 1));
@@ -264,7 +176,6 @@ export default function AdminAttendancePage() {
     return `${selectedMonth}-${String(day).padStart(2, "0")}`;
   });
 
-  const activeCompList = compensations[selectedStaffId] || [];
   const latestComp = activeCompList[activeCompList.length - 1];
   const isMonthly = latestComp?.pay_type === "monthly";
 

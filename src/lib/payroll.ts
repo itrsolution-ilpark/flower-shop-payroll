@@ -1,139 +1,118 @@
 import { getDaysInMonth } from "date-fns";
 
-export interface CompensationRule {
+export interface CompensationItem {
+  id?: string;
+  staff_id?: string;
   pay_type: "hourly" | "monthly";
   amount_krw: number;
-  effective_from: string; // YYYY-MM-DD
+  effective_from: string;
+  created_at?: string;
 }
 
-export interface AttendanceItem {
-  work_date: string; // YYYY-MM-DD
-  clock_in: string; // HH:mm or HH:mm:ss
-  clock_out: string;
+export interface AttendanceRecord {
+  id?: string;
+  staff_id?: string;
+  work_date: string;
+  clock_in?: string;
+  clock_out?: string;
   total_minutes: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
- * 출퇴근 시간을 기준으로 총 근무 분(minutes)을 계산합니다.
- * 퇴근 시각이 출근 시각보다 빠른 경우 0 반환
+ * 특정 날짜에 유효한 가장 최근 급여 조건 조회
  */
-export function calculateMinutes(clockIn: string, clockOut: string | null): number {
-  if (!clockOut) return 0;
-  const [inH, inM] = clockIn.split(":").map(Number);
-  const [outH, outM] = clockOut.split(":").map(Number);
+export function getEffectiveCompensationForDate(
+  compensations: CompensationItem[],
+  dateStr: string
+): CompensationItem | null {
+  if (!compensations || compensations.length === 0) return null;
+  const sorted = [...compensations].sort((a, b) =>
+    a.effective_from.localeCompare(b.effective_from)
+  );
 
-  const inMinutes = inH * 60 + inM;
-  const outMinutes = outH * 60 + outM;
-
-  const diff = outMinutes - inMinutes;
-  return diff > 0 ? diff : 0;
-}
-
-export function formatMinutesToHoursAndMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}시간 ${remainingMinutes.toString().padStart(2, "0")}분`;
-}
-
-/**
- * 특정 일자에 유효한 가장 최근의 급여 조건을 반환합니다.
- */
-export function getEffectiveCompensation(
-  rules: CompensationRule[],
-  targetDate: string
-): CompensationRule | null {
-  const sorted = [...rules].sort((a, b) => a.effective_from.localeCompare(b.effective_from));
-  let valid: CompensationRule | null = null;
-  for (const rule of sorted) {
-    if (rule.effective_from <= targetDate) {
-      valid = rule;
+  let effective: CompensationItem | null = null;
+  for (const c of sorted) {
+    if (c.effective_from <= dateStr) {
+      effective = c;
     }
   }
-  return valid;
+  return effective;
 }
 
 /**
- * 월별 급여 정산 (시급 및 월급 일할 계산 포함, 최종 합계 원 단위 반올림)
+ * SPEC F-09, F-10: 월별 근무 및 급여 정산 계산
+ * - 시급: 각 근무 기록별 근무 분 기준으로 일자별 유효 시급을 적용하여 계산 후 원 단위 반올림
+ * - 월급: 달력 일수 기준으로 일할 계산 후 원 단위 반올림
  */
-export function calculateMonthlySettlement(
-  rules: CompensationRule[],
-  attendances: AttendanceItem[],
-  targetMonth: string // YYYY-MM
+export function calculateStaffMonthlyEarnings(
+  compensations: CompensationItem[],
+  attendanceList: AttendanceRecord[],
+  targetMonth: string
 ): {
   error: string | null;
-  payType: "hourly" | "monthly" | null;
   amount: number;
   totalMinutes: number;
+  payType: "hourly" | "monthly" | null;
 } {
-  if (!rules || rules.length === 0) {
+  if (!compensations || compensations.length === 0) {
     return {
       error: "급여 적용 조건이 없어 계산할 수 없습니다.",
-      payType: null,
       amount: 0,
       totalMinutes: 0,
+      payType: null,
     };
   }
 
-  const [yearStr, monthStr] = targetMonth.split("-");
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
-  const daysInMonth = getDaysInMonth(new Date(year, month - 1));
+  const sortedComp = [...compensations].sort((a, b) =>
+    a.effective_from.localeCompare(b.effective_from)
+  );
+  const latestComp = sortedComp[sortedComp.length - 1];
 
-  // 해당 월 말일 기준 유효 급여 조건으로 유형 판단
-  const endOfMonthDate = `${targetMonth}-${String(daysInMonth).padStart(2, "0")}`;
-  const effectiveRuleAtMonthEnd = getEffectiveCompensation(rules, endOfMonthDate);
-
-  if (!effectiveRuleAtMonthEnd) {
-    // 월초에도 유효한 게 전혀 없는지 확인
-    const anyEffective = rules.some((r) => r.effective_from <= endOfMonthDate);
-    if (!anyEffective) {
-      return {
-        error: "급여 적용 조건이 없어 계산할 수 없습니다.",
-        payType: null,
-        amount: 0,
-        totalMinutes: 0,
-      };
-    }
-  }
-
-  const currentPayType = effectiveRuleAtMonthEnd?.pay_type ?? rules[rules.length - 1].pay_type;
-
-  if (currentPayType === "hourly") {
+  if (latestComp.pay_type === "hourly") {
     let totalMins = 0;
-    let totalEarnings = 0;
+    let totalPay = 0;
 
-    for (const record of attendances) {
-      if (!record.work_date.startsWith(targetMonth)) continue;
-      const rule = getEffectiveCompensation(rules, record.work_date);
-      if (rule && rule.pay_type === "hourly") {
-        totalMins += record.total_minutes;
-        totalEarnings += (record.total_minutes / 60) * rule.amount_krw;
+    for (const att of attendanceList) {
+      const comp = getEffectiveCompensationForDate(sortedComp, att.work_date);
+      if (comp && comp.pay_type === "hourly") {
+        const mins = att.total_minutes || 0;
+        totalMins += mins;
+        totalPay += (mins / 60) * comp.amount_krw;
       }
     }
 
     return {
       error: null,
-      payType: "hourly",
-      amount: Math.round(totalEarnings),
+      amount: Math.round(totalPay),
       totalMinutes: totalMins,
+      payType: "hourly",
     };
   } else {
-    // 월급 직원: 달력 일수 기준 일할 계산
-    let weightedPay = 0;
+    // 월급 직원 달력 일수 기준 일할 계산
+    const [year, month] = targetMonth.split("-").map(Number);
+    const totalDaysInMonth = getDaysInMonth(new Date(year, month - 1));
+    let weightedMonthlyPay = 0;
 
-    for (let day = 1; day <= daysInMonth; day++) {
+    for (let day = 1; day <= totalDaysInMonth; day++) {
       const dateStr = `${targetMonth}-${String(day).padStart(2, "0")}`;
-      const rule = getEffectiveCompensation(rules, dateStr);
-      if (rule && rule.pay_type === "monthly") {
-        weightedPay += rule.amount_krw / daysInMonth;
+      const comp = getEffectiveCompensationForDate(sortedComp, dateStr);
+      if (comp && comp.pay_type === "monthly") {
+        weightedMonthlyPay += comp.amount_krw / totalDaysInMonth;
       }
     }
 
     return {
       error: null,
-      payType: "monthly",
-      amount: Math.round(weightedPay),
+      amount: Math.round(weightedMonthlyPay),
       totalMinutes: 0,
+      payType: "monthly",
     };
   }
 }
+
+/**
+ * 수용 테스트 및 모듈 호환성을 위한 별칭 export
+ */
+export const calculateMonthlySettlement = calculateStaffMonthlyEarnings;

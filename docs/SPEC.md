@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 개발 문서
 
-> 문서 버전 v38 · 완성도 100% · 마지막 수정 2026. 10. 29. 18시 17분 52초
+> 문서 버전 v40 · 완성도 100% · 마지막 수정 2026. 10. 30. 11시 42분 32초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -10,26 +10,22 @@
 | 사이트 이름 | 플라워샵 근무 관리 |
 | 영문 식별자(slug) | flower-shop-payroll |
 | 개발 방식(framework) | nextjs |
-| 데이터베이스 사용 | 예 (Supabase) |
+| 데이터베이스 사용 | 예 (Neon PostgreSQL) |
 | 배포 | GitHub → Vercel (무료) |
 
 ## 1. 프로젝트 개요 (한눈에 보기)
 
 ### 프로젝트 목적
-‘플라워샵 근무 관리’는 여러 플라워샵의 직원 가입 신청, 출퇴근 기록, 급여 계산을 통합 관리하는 웹 프로그램입니다. 급여 방식은 **시급** 또는 **월급** 중 하나이며, 급여 방식과 금액은 적용 시작일을 기준으로 정확하게 일할/시간 정산합니다.
+‘플라워샵 근무 관리’는 여러 플라워샵의 직원 가입 신청, 출퇴근 기록, 급여 계산을 통합 관리하는 웹 프로그램입니다. 급여 방식은 **시급** 또는 **월급** 중 하나이며, 급여 조건과 금액은 적용 시작일을 기준으로 정확하게 일할/시간 정산합니다.
 
 ### 역할 및 주요 권한
 1. **시스템 관리자**: 최초 시스템 설정 후 플라워샵을 등록하고 이름을 수정합니다.
 2. **플라워샵 관리자**: 본인 플라워샵의 직원 가입 승인, 재직·퇴사 상태 관리, 급여 조건(시급/월급) 설정, 소속 직원의 근무 기록 보완 및 월별 정산을 수행합니다. 로그인 화면에서 관리자 본인 정보(이름, 비밀)를 직접 수정할 수 있습니다.
 3. **플라워샵 직원**: 플라워샵별 가입을 신청하고, 관리자 승인 후 재직 상태에서 출퇴근 시간을 등록하고 본인 월별 급여를 조회합니다. (직원 로그인 목록에서 플라워샵 대표 관리자는 완전히 제외됩니다.)
 
-### 42501(RLS 정책 위반) 원천 차단 아키텍처
-- **에러 발생 원인**: Supabase 테이블에 행 수준 보안(RLS)이 걸린 상태에서, 브라우저(클라이언트 컴포넌트)의 `createClient(anon_key)`로 직접 `INSERT`/`UPDATE`를 시도하면 즉시 `42501 new row violates row-level security policy`가 발생합니다.
-- **해결 및 구현 규칙**:
-  1. 클라이언트 컴포넌트(`'use client'`)에서는 절대로 Supabase 클라이언트를 직접 import하여 쓰기/수정/삭제를 호출하지 않습니다.
-  2. 모든 데이터 쓰기(등록, 수정, 삭제) 및 보안이 필요한 조회는 **Next.js Server Actions**(`src/actions/*`)를 통해서만 실행합니다.
-  3. 서버 액션 내부에서는 `SUPABASE_SERVICE_ROLE_KEY`를 사용하는 전용 서버 클라이언트(`lib/supabase-server.ts`)를 사용하여 RLS를 안전하게 우회하고 권한을 철저히 검증한 후 DB를 조작합니다.
-  4. 세션은 서버 서명 쿠키(`APP_SESSION_SECRET`)로 안전하게 유지합니다.
+### 안전한 서버 중심 DB 아키텍처 (Neon PostgreSQL)
+- **DB 연결 방식**: 클라이언트 브라우저가 데이터베이스에 직접 접근하지 않고, 모든 데이터 읽기/쓰기는 **Next.js Server Actions**(`src/actions/*`) 내부에서 Neon PostgreSQL(`DATABASE_URL`) 서버 연결 풀을 통해 전담 처리합니다.
+- **보안 보장**: 데이터베이스 자격 증명(URL/비밀번호)은 브라우저에 절대 노출되지 않으며, 사용자 식별 및 접근 제어는 서버 서명 쿠키(`APP_SESSION_SECRET`)로 검증합니다.
 
 ## 2. 사용자와 사용 시나리오
 
@@ -55,18 +51,17 @@
 
 | ID | 기능 | 동작 규칙 | 수용 기준 (Given/When/Then) |
 | --- | --- | --- | --- |
-| F-01 | 시스템 관리자 최초 등록 및 로그인 | 시스템 관리자가 없을 때 이름과 동일한 숫자 4자리 비밀 확인값을 받아 생성합니다. 이미 있으면 새로 만들지 않고 로그인을 제공합니다. **반드시 서버 액션에서 Service Role 클라이언트를 사용하여 RLS(42501)를 방지**합니다. | **Given** 시스템 관리자가 0명이다. **When** 유효한 이름과 일치하는 숫자 4자리 비밀을 제출하여 서버 액션을 호출한다. **Then** 계정이 한 개 생성되고 로그인 상태가 된다. **Given** 관리자가 이미 있다. **When** 다른 사용자가 최초 등록을 시도한다. **Then** 두 번째 계정은 생성되지 않는다. |
-| F-02 | 플라워샵 관리 | 시스템 관리자 인증 후 플라워샵을 등록하거나 기존 이름을 수정합니다. 서버 액션(Service Role)으로 처리하여 42501 에러를 방지합니다. | **Given** 시스템 관리자로 인증했다. **When** 유효한 플라워샵 이름을 저장한다. **Then** 메인 목록에 반영된다. **When** 같은 이름을 등록한다. **Then** 저장하지 않고 ‘이미 등록된 플라워샵 이름입니다.’를 표시한다. |
-| F-03 | 플라워샵 검색 및 선택 | 검색어는 이름에 포함되는지 기준으로 찾고, 앞뒤 공백을 제거하며 대소문자 구분 없이 처리합니다. | **Given** 플라워샵이 등록되어 있다. **When** 검색어를 입력한다. **Then** 이름에 검색어가 포함된 항목만 보인다. **When** ‘선택’을 누른다. **Then** 해당 플라워샵의 `/shop/[id]`로 이동한다. 결과가 없으면 ‘검색 결과가 없습니다.’가 표시된다. |
-| F-04 | 플라워샵별 관리자 등록·수정 | 관리자 조회·저장 때 현재 플라워샵의 `shop_id`를 반드시 사용합니다. 한 플라워샵에는 관리자 한 명만 둡니다. 서버 액션(Service Role)을 통해 저장하여 RLS 오류를 방지합니다. | **Given** 플라워샵에 관리자가 등록되어 있다. **When** 관리자 로그인 화면에서 본인 정보 수정 기능을 통해 새 이름이나 비밀을 입력한다. **Then** 해당 플라워샵 관리자 정보가 정상 수정된다. |
-| F-05 | 직원 가입 신청 | 직원은 이름과 숫자 4자리 비밀 및 확인값으로 신청합니다. 신청 직후 상태는 `pending`이고 로그인은 허용하지 않습니다. 서버 액션(Service Role)을 통해 저장합니다. | **Given** 플라워샵을 선택했다. **When** 유효한 가입 정보를 제출한다. **Then** 해당 플라워샵에 `pending` 직원이 생성되고 완료 안내가 표시된다. 이름이 이미 사용 중이면 ‘이미 등록된 이름입니다.’를 표시하고 저장하지 않는다. |
-| F-06 | 직원 승인·상태 관리·급여 조건 | 관리자는 신청자를 승인할 때 급여 유형(`hourly` 또는 `monthly`), 금액, 적용 시작일을 지정합니다. 직원은 `active`로 전환됩니다. 서버 액션(Service Role)으로 처리합니다. | **Given** 승인 대기 직원이 있다. **When** 관리자가 유효한 급여 조건을 설정하고 승인한다. **Then** 직원 상태가 `active`가 되고 급여 조건이 저장된다. **When** 관리자가 재직 직원을 퇴사 처리한다. **Then** 상태가 `resigned`가 되고 로그인 목록에서 제외된다. |
-| F-07 | 직원 로그인 및 비밀 변경 | 로그인 목록은 선택한 플라워샵의 `active` 직원만 보여주며, **대표(관리자) 계정은 직원 로그인 목록에서 완전히 제외**합니다. 인증은 서버에서 해시를 비교합니다. | **Given** 한 플라워샵에 재직 직원과 대표 관리자가 있다. **When** 직원 로그인 목록을 연다. **Then** 재직 직원만 보이고 대표 관리자는 표시되지 않는다. |
-| F-08 | 시급 직원 출퇴근 기록 | 시급 재직 직원은 날짜, 출근 시각, 퇴근 시각을 입력·수정합니다. 날짜 기본값은 오늘입니다. 서버 액션(Service Role)으로 저장하여 42501을 방지합니다. | **Given** 시급 재직 직원이 로그인했다. **When** 09:30~18:30을 저장한다. **Then** 540분으로 계산되어 보인다. **When** 퇴근 시각이 출근 시각과 같거나 빠르다. **Then** 저장하지 않고 ‘퇴근 시간은 출근 시간보다 늦어야 합니다.’를 표시한다. |
-| F-09 | 직원의 월별 조회 | 직원은 월 선택으로 본인의 해당 월 근무 기록, 총 근무 시간, 예상 급여를 조회합니다. 월급 직원은 출퇴근 기록 없이 월 급여만 조회합니다. | **Given** 직원이 로그인했다. **When** 정산 월을 선택한다. **Then** 본인 데이터만 해당 월 기준으로 표시된다. 다른 직원 데이터는 응답에 포함되지 않는다. |
-| F-10 | 관리자 월별 정산 및 기록 보완 | 관리자는 월을 선택하고 직원별 상태, 급여 유형, 총 근무 시간, 급여액을 확인합니다. 직원을 선택하면 하단 상세 내역이 보입니다. 서버 액션(Service Role)으로 저장합니다. | **Given** 관리자가 정산 월과 직원을 선택했다. **When** 상세를 확인한다. **Then** 해당 직원의 월 기록과 계산 내역이 표시된다. 월급 직원이면 출근·퇴근 항목이 없다. **When** 관리자가 유효한 시급 직원 근무 기록을 저장한다. **Then** 상세 내역과 합계가 갱신된다. |
-| F-11 | 공통 배너 및 화면 문구 | 모든 화면 상단에 ‘플라워샵 근무 관리’를 표시합니다. 화면에 보이는 인증 라벨은 ‘비밀’, 확인 라벨은 ‘비밀 확인’입니다. | **Given** 사용자가 어떤 경로를 연다. **When** 화면이 표시된다. **Then** 공통 배너가 보이고, 사용자에게 표시되는 인증 문구에 ‘PIN’이 쓰이지 않는다. |
-| F-12 | 입력 오류와 데이터 접근 제한 | 필수값 누락, 잘못된 날짜·금액·비밀, 권한 없는 요청은 서버에서 거부합니다. 42501 에러 방지를 위해 모든 쓰기 작업은 서버 전용 클라이언트를 통합니다. | **Given** 사용자가 다른 플라워샵의 직원·근무 기록을 요청한다. **When** 서버가 요청을 검증한다. **Then** 응답은 거부되고 다른 플라워샵 데이터가 반환되지 않는다. 잘못된 입력은 저장되지 않고 원인을 설명하는 안내가 표시된다. |
+| F-01 | 시스템 관리자 최초 등록 및 로그인 | 시스템 관리자가 없을 때 이름과 4자리 비밀을 입력받아 최초 1회 생성합니다. 이미 계정이 존재하면 로그인 폼만 제공합니다. 모든 DB 접근은 서버 액션 내 PostgreSQL 풀을 사용합니다. | **Given** 시스템 관리자가 0명이다. **When** 이름과 숫자 4자리 비밀을 일치하게 제출한다. **Then** `system_admins`에 단 하나의 계정이 저장되고 시스템 관리자 세션이 발급된다. **Given** 계정이 이미 존재한다. **When** 중복 등록을 시도한다. **Then** 거부되고 '이미 시스템 관리자가 등록되어 있습니다.'가 표시된다. |
+| F-02 | 플라워샵 관리 | 시스템 관리자로 인증된 사용자만 플라워샵 목록을 조회·등록하고 이름을 수정할 수 있습니다. | **Given** 시스템 관리자로 로그인되어 있다. **When** 유효한 플라워샵 이름을 입력하고 저장을 누른다. **Then** 메인 목록에 추가된다. **When** 동일한 이름을 다시 등록하려 한다. **Then** '이미 등록된 플라워샵 이름입니다.' 오류가 안내된다. |
+| F-03 | 플라워샵 검색 및 선택 | 검색어 입력 시 공백 제거 및 대소문자 무시 조건으로 일치 플라워샵 목록을 실시간 필터링합니다. | **Given** 플라워샵 목록이 렌더링되어 있다. **When** 검색어를 입력한다. **Then** 이름에 검색어가 포함된 카드만 노출된다. **When** '선택' 버튼을 누른다. **Then** `/shop/[id]`로 이동한다. |
+| F-04 | 플라워샵별 관리자 등록·수정 | 해당 플라워샵 `shop_id`에 관리자가 없으면 등록 모드, 있으면 관리자 본인 정보(이름, 비밀) 수정 모드를 제공합니다. | **Given** 관리자가 없는 플라워샵 상세로 진입한다. **When** 관리자 등록 화면에서 정보와 4자리 비밀을 제출한다. **Then** `shop_admins`에 등록된다. **Given** 기존 관리자이다. **When** 로그인 화면에서 정보 수정을 수행한다. **Then** 해당 관리자 정보가 갱신된다. |
+| F-05 | 직원 가입 신청 | 직원은 소속 플라워샵을 선택하고 이름과 숫자 4자리 비밀을 입력해 가입을 신청합니다. 초기 상태는 `pending`입니다. | **Given** 특정 플라워샵 화면에 진입했다. **When** 가입 정보를 제출한다. **Then** `staff` 테이블에 `pending` 상태로 저장되고 '가입 신청이 완료되었습니다.'가 표시된다. |
+| F-06 | 직원 승인 및 급여 조건 설정 | 플라워샵 관리자는 신청 대기 직원을 승인하면서 급여 유형(`hourly` 또는 `monthly`), 금액(KRW), 적용 시작일을 설정합니다. 직원은 `active`로 변경됩니다. | **Given** 승인 대기 직원이 존재한다. **When** 관리자가 시급/월급 조건과 금액, 시작일을 입력 후 승인을 누른다. **Then** 직원은 `active`가 되고 `compensation`에 조건이 기록된다. **When** 퇴사 처리를 누른다. **Then** `resigned`로 전환되고 로그인 대상에서 제외된다. |
+| F-07 | 직원 로그인 | 선택한 플라워샵의 `active` 직원 목록에서 본인 이름을 선택하고 4자리 비밀로 로그인합니다. **대표(플라워샵 관리자)는 직원 로그인 목록에서 완전히 제외**됩니다. | **Given** 플라워샵에 대표 관리자와 직원이 존재한다. **When** 직원 로그인 목록을 조회한다. **Then** 대표 관리자는 노출되지 않고 `active` 직원만 노출된다. |
+| F-08 | 시급 직원 출퇴근 기록 | 시급제 재직 직원은 날짜(기본 오늘), 출근 시각, 퇴근 시각을 등록 및 수정합니다. | **Given** 시급 재직 직원이 로그인했다. **When** 유효한 출근 및 퇴근 시각을 입력하고 저장한다. **Then** 총 근무 분이 계산되어 DB에 기록된다. **When** 퇴근 시각이 출근 시각과 같거나 빠르다. **Then** 저장을 거부하고 '퇴근 시간은 출근 시간보다 늦어야 합니다.'를 표기한다. |
+| F-09 | 직원 월별 근무·급여 조회 | 직원은 월 선택기(`YYYY-MM`)를 통해 본인의 해당 월 출퇴근 내역과 예상 정산 급여를 확인합니다. 월급 직원은 출퇴근 목록 없이 급여 정보만 확인합니다. | **Given** 직원이 로그인했다. **When** 정산 월을 선택한다. **Then** 본인 데이터만 계산되어 표기된다. |
+| F-10 | 관리자 월별 정산 및 기록 보완 | 관리자는 월별로 소속 직원들의 총 근무시간, 지급 급여액을 일괄 조회하고 개별 직원의 출퇴근 기록을 보완/수정할 수 있습니다. | **Given** 관리자가 정산 화면에서 특정 직원을 선택한다. **When** 시급 직원의 근무 기록을 수정 저장한다. **Then** 즉시 재정산된 월 급여가 반영된다. 월급 직원의 경우 출퇴근 입력 항목 없이 고정 급여/일할 정산액만 표시된다. |
+| F-11 | 공통 배너 및 명칭 규칙 | 모든 화면 상단에 '플라워샵 근무 관리' 배너가 항상 노출되며, 인증 관련 명칭은 오직 '비밀', '비밀 확인'으로만 표시됩니다. | **Given** 임의의 페이지를 렌더링한다. **When** 화면을 확인한다. **Then** 상단 배너가 정상 표시되고 'PIN'이라는 단어가 UI에 노출되지 않는다. |
 
 ## 4. 화면과 주소(URL) 구성
 
@@ -91,11 +86,11 @@
 
 ## 5. 데이터 모델
 
-### 데이터베이스 스키마 (Supabase SQL Editor 전체 실행 스크립트)
-모든 비밀은 단방향 해시(bcrypt 또는 crypto 해시)로 암호화되어 `pin_hash`에 저장되며 화면이나 클라이언트에 절대 노출되지 않습니다. 아래 스크립트는 기존의 42501 오류를 원천 방지할 수 있도록 테이블과 RLS를 완전히 새로 구성합니다.
+### 데이터베이스 스키마 (Neon PostgreSQL 전체 실행 DDL)
+모든 4자리 비밀은 단방향 해시(bcrypt 또는 crypto sha256)로 암호화되어 `pin_hash`에 저장되며 화면이나 클라이언트에 절대 노출되지 않습니다. Neon 콘솔의 SQL Editor에서 아래 스크립트를 한 번에 실행합니다.
 
 ```sql
--- 1. 기존 테이블 일괄 정리
+-- 1. 기존 테이블 정리 (외래키 종속성 순서대로 삭제)
 DROP TABLE IF EXISTS auth_attempts CASCADE;
 DROP TABLE IF EXISTS attendance CASCADE;
 DROP TABLE IF EXISTS compensation CASCADE;
@@ -106,91 +101,79 @@ DROP TABLE IF EXISTS system_admins CASCADE;
 
 -- 2. 시스템 관리자 테이블
 CREATE TABLE system_admins (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  pin_hash text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 3. 플라워샵 테이블
 CREATE TABLE shops (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 4. 플라워샵별 관리자 테이블 (플라워샵당 단 1명)
 CREATE TABLE shop_admins (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id uuid NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  pin_hash text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 5. 플라워샵 직원 테이블 (대표 관리자는 여기에 포함되지 않음)
 CREATE TABLE staff (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id uuid NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  pin_hash text NOT NULL,
-  status text NOT NULL DEFAULT 'pending'
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'active', 'resigned')),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  resigned_at timestamptz,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resigned_at TIMESTAMPTZ,
   UNIQUE (shop_id, name)
 );
 
 -- 6. 급여 조건 테이블 (시급 또는 월급)
 CREATE TABLE compensation (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-  pay_type text NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
-  amount_krw integer NOT NULL CHECK (amount_krw > 0),
-  effective_from date NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  pay_type TEXT NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
+  amount_krw INTEGER NOT NULL CHECK (amount_krw > 0),
+  effective_from DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (staff_id, effective_from)
 );
 
 -- 7. 출퇴근 근무 기록 테이블 (시급 직원 전용)
 CREATE TABLE attendance (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-  work_date date NOT NULL,
-  clock_in time NOT NULL,
-  clock_out time NOT NULL,
-  total_minutes integer NOT NULL CHECK (total_minutes > 0),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  work_date DATE NOT NULL,
+  clock_in TIME NOT NULL,
+  clock_out TIME NOT NULL,
+  total_minutes INTEGER NOT NULL CHECK (total_minutes > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (staff_id, work_date),
   CHECK (clock_out > clock_in)
 );
 
--- 8. 인증 실패 차단 기록 테이블
+-- 8. 로그인 실패 차단 기록 테이블
 CREATE TABLE auth_attempts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  identity_hash text NOT NULL,
-  attempted_at timestamptz NOT NULL DEFAULT now(),
-  succeeded boolean NOT NULL DEFAULT false
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identity_hash TEXT NOT NULL,
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  succeeded BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- 9. RLS(행 수준 보안) 활성화
-ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shop_admins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compensation ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY;
-
--- 10. 공개 RLS 차단 정책 (직접 브라우저 anon 호출 거부, Service Role 서버 통신만 허용)
-CREATE POLICY "Deny client access to system_admins" ON system_admins FOR ALL USING (false);
-CREATE POLICY "Deny client access to shops" ON shops FOR ALL USING (false);
-CREATE POLICY "Deny client access to shop_admins" ON shop_admins FOR ALL USING (false);
-CREATE POLICY "Deny client access to staff" ON staff FOR ALL USING (false);
-CREATE POLICY "Deny client access to compensation" ON compensation FOR ALL USING (false);
-CREATE POLICY "Deny client access to attendance" ON attendance FOR ALL USING (false);
-CREATE POLICY "Deny client access to auth_attempts" ON auth_attempts FOR ALL USING (false);
+-- 9. 인덱스 생성
+CREATE INDEX idx_staff_shop_id ON staff(shop_id);
+CREATE INDEX idx_attendance_staff_id_date ON attendance(staff_id, work_date);
+CREATE INDEX idx_compensation_staff_id ON compensation(staff_id, effective_from DESC);
+CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempted_at DESC);
 ```
 
 ## 6. 디자인 가이드
@@ -226,21 +209,19 @@ CREATE POLICY "Deny client access to auth_attempts" ON auth_attempts FOR ALL USI
 
 ## 7. 기술 스택과 폴더 구조
 
-### 기술 스택 및 라이브러리
+### 기술 스택 및 환경
 - **Framework**: Next.js 14+ (App Router, Server Actions)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **Database & Auth**: Supabase PostgreSQL (서버 측 `@supabase/supabase-js` 연동)
-- **Date/Time**: `date-fns`
-- **Icon**: `lucide-react`
+- **Database**: Neon PostgreSQL (`pg` 또는 `@neondatabase/serverless` POOL 모드)
+- **Date Library**: `date-fns`
+- **Icons**: `lucide-react`
 
 ### 환경 변수 명세
-| 환경 변수명 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | 필수 | Supabase 프로젝트 URL (공개 가능) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 필수 | Supabase Anon Key (공개 가능) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **필수** | **Supabase Service Role Key**. Server Actions 전용 DB 클라이언트에서 RLS 우회 및 CRUD 수행에 필수 (브라우저 노출 금지) |
-| `APP_SESSION_SECRET` | 필수 | 쿠키 세션 암호화 및 서명용 32자 이상 랜덤 문자열 |
+| 환경 변수명 | 필수 여부 | 브라우저 노출 | 설명 |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | **필수** | **금지 (서버 전용)** | Neon PostgreSQL 연결 스트링 (`postgres://...`) |
+| `APP_SESSION_SECRET` | **필수** | **금지 (서버 전용)** | 쿠키 세션 암호화 및 서명용 32자 이상 비밀키 |
 
 ### 소스 트리 구조
 ```text
@@ -250,9 +231,7 @@ flower-shop-payroll/
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── .env.example
-├── supabase/
-│   └── migrations/
-│       └── 0001_initial_schema.sql
+├── schema.sql
 └── src/
     ├── app/
     │   ├── layout.tsx
@@ -266,22 +245,22 @@ flower-shop-payroll/
     │   ├── admin/attendance/page.tsx
     │   └── employee/dashboard/page.tsx
     ├── actions/
-    │   ├── systemAdminActions.ts  // 시스템 관리자 등록, 로그인
+    │   ├── systemAdminActions.ts  // 시스템 관리자 등록/인증
     │   ├── shopActions.ts         // 플라워샵 목록, 등록, 수정
-    │   ├── shopAdminActions.ts    // 플라워샵별 관리자 등록, 로그인, 본인 수정
-    │   ├── staffActions.ts        // 직원 가입신청, 승인, 상태변경, 비밀변경
-    │   └── attendanceActions.ts   // 출퇴근 등록, 수정, 월별 정산 집계
+    │   ├── shopAdminActions.ts    // 관리자 등록, 인증, 본인정보 수정
+    │   ├── staffActions.ts        // 직원 신청, 승인, 상태, 급여조건, 비밀변경
+    │   └── attendanceActions.ts   // 출퇴근 등록/수정, 월별 급여 집계
     ├── components/
-    │   ├── ProgramBanner.tsx      // 공통 상단 프로그램 배너
-    │   ├── SecretField.tsx        // 4자리 숫자 '비밀', '비밀 확인' 전용 인풋
-    │   ├── MonthPicker.tsx        // 정산 월 선택기 (YYYY-MM)
-    │   ├── TimePicker.tsx         // 출퇴근 시간 선택 드롭다운/입력 UI
-    │   └── StatusBadge.tsx        // 대기, 재직, 퇴사 뱃지
+    │   ├── ProgramBanner.tsx      // 공통 상단 배너
+    │   ├── SecretField.tsx        // 4자리 숫자 '비밀', '비밀 확인' 전용 컴포넌트
+    │   ├── MonthPicker.tsx        // 정산 월 선택 컴포넌트
+    │   ├── TimePicker.tsx         // 출퇴근 시간 선택 컴포넌트
+    │   └── StatusBadge.tsx        // 상태 표시 뱃지
     └── lib/
-        ├── supabase-server.ts     // SUPABASE_SERVICE_ROLE_KEY를 사용하는 서버 전용 싱글톤 클라이언트
-        ├── session.ts             // 쿠키 기반 서버 세션 암호화/복호화
-        ├── hash.ts                // 4자리 비밀 해시 생성 및 검증
-        └── payroll.ts             // 시급/월급 급여 계산 유틸리티
+        ├── db.ts                  // Neon PostgreSQL pg.Pool 싱글톤 인스턴스
+        ├── session.ts             // 쿠키 기반 세션 암호화 유틸리티
+        ├── hash.ts                // 4자리 비밀 단방향 해시 생성 및 검증
+        └── payroll.ts             // 시급/월급 급여 정산 알고리즘 모듈
 ```
 
 ## 8. 품질 기준 (성능·보안·접근성)
@@ -300,10 +279,13 @@ flower-shop-payroll/
 ## 9. 배포와 운영
 
 ### 배포 절차
-1. Supabase 대시보드의 SQL Editor에서 `supabase/migrations/0001_initial_schema.sql` 스크립트를 실행하여 모든 테이블과 RLS 정책을 새로 생성합니다.
-2. GitHub 저장소의 `main` 브랜치를 Vercel 프로젝트에 연결하여 빌드·배포합니다.
-3. Vercel 환경 변수에 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_SESSION_SECRET`을 올바르게 설정합니다. 서비스 롤 키와 세션 비밀은 서버 환경 변수로만 유지합니다.
-4. 배포 완료 후 `meta.smokeRoutes`의 경로가 각각 HTTP 200을 반환하는지 확인합니다. 이 경로는 로그인이나 DB 데이터 없이도 페이지 틀을 렌더링해야 합니다.
+1. **Neon PostgreSQL 데이터베이스 준비**: Neon 콘솔(또는 새 DB 인스턴스)의 SQL Editor에서 `schema.sql` 스크립트를 전체 실행하여 테이블과 인덱스를 생성합니다.
+2. **연결 문자열 복사**: Neon 대시보드에서 제공하는 `Connection String`(Pooling 지원 주소 권장)을 복사합니다.
+3. **Vercel 환경 변수 등록**: Vercel 대시보드 프로젝트 환경 변수에 다음 값을 등록합니다.
+   - `DATABASE_URL`: Neon PostgreSQL 연결 주소
+   - `APP_SESSION_SECRET`: 세션 암호화용 32자 이상 랜덤 문자열
+4. **GitHub 연결 배포**: 저장소의 코드를 Vercel에 배포합니다.
+5. **배포 후 검증**: `meta.smokeRoutes`에 명시된 5개 공개 경로가 HTTP 200으로 정상 렌더링되는지 확인합니다.
 
 ## 10. 테스트 계획
 
@@ -315,18 +297,18 @@ flower-shop-payroll/
 - `GET /signup` : 플라워샵 직원 가입 신청 폼 렌더링 (HTTP 200)
 
 ### 핵심 기능 수용 테스트 시나리오
-1. **RLS 우회 및 42501 에러 방지 검증**
-   - **Given** 테이블이 완전 초기화되어 데이터가 없는 상태이다.
+1. **DB 연결 및 시스템 관리자 최초 등록 검증**
+   - **Given** Neon DB에 데이터가 비어 있는 상태이다.
    - **When** `/system-setup`에서 이름과 4자리 비밀을 입력하고 '시스템 관리자 생성'을 누른다.
-   - **Then** 클라이언트 에러(42501) 없이 정상적으로 계정이 생성되고 시스템 관리자 세션이 발급된다.
+   - **Then** DB `system_admins` 테이블에 정상 저장되고 오류 없이 시스템 관리자 세션이 발급된다.
 2. **플라워샵 생성 및 중복 방지**
    - **Given** 시스템 관리자로 로그인되어 있다.
    - **When** 새 플라워샵 이름('장미화원')을 입력하고 추가를 누른다.
-   - **Then** DB에 저장되고 목록에 노출된다. 동일 이름 재등록 시 '이미 등록된 플라워샵 이름입니다.' 안내가 뜬다.
+   - **Then** `shops` 테이블에 저장되고 목록에 노출된다. 동일 이름 재등록 시 '이미 등록된 플라워샵 이름입니다.' 오류가 안내된다.
 3. **플라워샵별 관리자 등록 및 본인 수정**
    - **Given** 관리자가 없는 플라워샵으로 진입한다.
    - **When** 관리자 등록 화면에서 이름과 4자리 비밀을 등록한다.
-   - **Then** 관리자가 생성된다. 이후 로그인 화면의 정보 수정 기능을 통해 본인의 이름과 비밀을 변경할 수 있다.
+   - **Then** `shop_admins`에 저장된다. 이후 로그인 화면의 정보 수정 기능을 통해 본인의 이름과 비밀을 변경할 수 있다.
 4. **직원 로그인 목록 대표 제외 확인**
    - **Given** 관리자 A와 승인된 직원 B가 소속되어 있다.
    - **When** 직원 로그인 선택 화면을 연다.
@@ -354,12 +336,14 @@ flower-shop-payroll/
 
 ## 12. 아직 정해지지 않은 사항
 
-현재 개발 시작을 막는 미정 사항은 없습니다. 이 문서의 기본값을 기준으로 구현합니다.
+최종 감수가 완료되었습니다. 미정 사항이 없으며 즉시 개발을 시작할 수 있습니다.
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v40 | 2026. 10. 30. 9시 50분 8초 | 최종 감수: 최종 감수 완료: Neon DB 기반 전체 기능·화면·테스트·배포 아키텍처 정합성 검증 및 개발 착수 문서 확정 |
+| v39 | 2026. 10. 30. 9시 46분 22초 | 데이터베이스를 Neon PostgreSQL 아키텍처로 전환하고 스키마, 서버 연결 방식, 배포 및 환경 변수 명세를 최신화했습니다. |
 | v38 | 2026. 10. 29. 17시 55분 40초 | 최종 감수: 최종 감수 완료: 42501(RLS 정책 위반) 방지를 위한 Server Actions 아키텍처 및 Supabase SQL 스키마 최종 확정, 컴포넌트 및 환경변수 완비 |
 | v37 | 2026. 10. 29. 17시 52분 33초 | 변경된 모델과 요구사항을 바탕으로 Supabase 스키마, RLS 정책 가이드, 서버 액션 구현 명세를 완벽히 정돈하여 재생성 준비를 완료했습니다. |
 | v36 | 2026. 10. 29. 17시 45분 5초 | Supabase RLS(42501) 오류 해결을 위한 서버 전용 클라이언트(service_role) 사용 강제 및 데이터베이스 초기화 재적용 규칙 보강 |

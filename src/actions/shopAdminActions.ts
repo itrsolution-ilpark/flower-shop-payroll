@@ -1,8 +1,8 @@
 "use server";
 
-import { getServiceSupabase } from "@/lib/supabase-server";
+import { query } from "@/lib/db";
 import { hashPin, isValidPinFormat } from "@/lib/hash";
-import { createSession, getSession } from "@/lib/session";
+import { createSession } from "@/lib/session";
 import { ActionResult } from "./systemAdminActions";
 
 export interface ShopAdminInfo {
@@ -15,15 +15,16 @@ export interface ShopAdminInfo {
  * 플라워샵별 관리자 조회
  */
 export async function getShopAdminAction(shopId: string): Promise<ShopAdminInfo | null> {
-  const supabase = getServiceSupabase();
-  const { data, error } = await supabase
-    .from("shop_admins")
-    .select("id, shop_id, name")
-    .eq("shop_id", shopId)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return data;
+  try {
+    const res = await query(
+      "SELECT id, shop_id, name FROM shop_admins WHERE shop_id = $1 LIMIT 1",
+      [shopId]
+    );
+    if (!res.rows || res.rows.length === 0) return null;
+    return res.rows[0];
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -46,44 +47,38 @@ export async function registerShopAdminAction(
     return { success: false, error: "비밀 확인이 일치하지 않습니다." };
   }
 
-  const supabase = getServiceSupabase();
+  try {
+    // 이미 해당 플라워샵에 관리자가 있는지 확인
+    const existing = await query(
+      "SELECT id FROM shop_admins WHERE shop_id = $1 LIMIT 1",
+      [shopId]
+    );
+    if (existing.rows && existing.rows.length > 0) {
+      return { success: false, error: "이미 해당 플라워샵에 관리자가 존재합니다." };
+    }
 
-  // 이미 해당 플라워샵에 관리자가 있는지 확인
-  const { data: existing } = await supabase
-    .from("shop_admins")
-    .select("id")
-    .eq("shop_id", shopId)
-    .maybeSingle();
+    const pinHash = hashPin(pin);
+    const insertRes = await query(
+      "INSERT INTO shop_admins (shop_id, name, pin_hash) VALUES ($1, $2, $3) RETURNING id, shop_id, name",
+      [shopId, trimmedName, pinHash]
+    );
 
-  if (existing) {
-    return { success: false, error: "이미 해당 플라워샵에 관리자가 존재합니다." };
-  }
+    const admin = insertRes.rows[0];
+    if (!admin) {
+      return { success: false, error: "관리자 등록 중 오류가 발생했습니다." };
+    }
 
-  const pinHash = hashPin(pin);
-  const { data, error } = await supabase
-    .from("shop_admins")
-    .insert([
-      {
-        shop_id: shopId,
-        name: trimmedName,
-        pin_hash: pinHash,
-      },
-    ])
-    .select("id, shop_id, name")
-    .single();
+    await createSession({
+      role: "shop_admin",
+      userId: admin.id,
+      name: admin.name,
+      shopId: admin.shop_id,
+    });
 
-  if (error || !data) {
+    return { success: true, data: admin };
+  } catch {
     return { success: false, error: "관리자 등록 중 오류가 발생했습니다." };
   }
-
-  await createSession({
-    role: "shop_admin",
-    userId: data.id,
-    name: data.name,
-    shopId: data.shop_id,
-  });
-
-  return { success: true, data };
 }
 
 /**
@@ -99,29 +94,29 @@ export async function loginShopAdminAction(
     return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
   }
 
-  const supabase = getServiceSupabase();
-  const pinHash = hashPin(pin);
+  try {
+    const pinHash = hashPin(pin);
+    const res = await query(
+      "SELECT id, shop_id, name FROM shop_admins WHERE shop_id = $1 AND name = $2 AND pin_hash = $3 LIMIT 1",
+      [shopId, trimmedName, pinHash]
+    );
 
-  const { data, error } = await supabase
-    .from("shop_admins")
-    .select("id, shop_id, name")
-    .eq("shop_id", shopId)
-    .eq("name", trimmedName)
-    .eq("pin_hash", pinHash)
-    .maybeSingle();
+    const admin = res.rows[0];
+    if (!admin) {
+      return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+    }
 
-  if (error || !data) {
+    await createSession({
+      role: "shop_admin",
+      userId: admin.id,
+      name: admin.name,
+      shopId: admin.shop_id,
+    });
+
+    return { success: true, data: admin };
+  } catch {
     return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
   }
-
-  await createSession({
-    role: "shop_admin",
-    userId: data.id,
-    name: data.name,
-    shopId: data.shop_id,
-  });
-
-  return { success: true, data };
 }
 
 /**
@@ -148,41 +143,34 @@ export async function updateShopAdminAction(
     return { success: false, error: "비밀 확인이 일치하지 않습니다." };
   }
 
-  const supabase = getServiceSupabase();
-  const currentPinHash = hashPin(currentPin);
+  try {
+    const currentPinHash = hashPin(currentPin);
+    const findRes = await query(
+      "SELECT id FROM shop_admins WHERE shop_id = $1 AND pin_hash = $2 LIMIT 1",
+      [shopId, currentPinHash]
+    );
 
-  // 현재 관리자 비밀 일치 확인
-  const { data: admin, error: findError } = await supabase
-    .from("shop_admins")
-    .select("id")
-    .eq("shop_id", shopId)
-    .eq("pin_hash", currentPinHash)
-    .maybeSingle();
+    const admin = findRes.rows[0];
+    if (!admin) {
+      return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
+    }
 
-  if (findError || !admin) {
-    return { success: false, error: "이름 또는 비밀을 확인해 주세요." };
-  }
+    const newPinHash = hashPin(newPin);
+    await query(
+      "UPDATE shop_admins SET name = $1, pin_hash = $2 WHERE id = $3",
+      [trimmedNewName, newPinHash, admin.id]
+    );
 
-  const newPinHash = hashPin(newPin);
-  const { error: updateError } = await supabase
-    .from("shop_admins")
-    .update({
+    // 세션 갱신
+    await createSession({
+      role: "shop_admin",
+      userId: admin.id,
       name: trimmedNewName,
-      pin_hash: newPinHash,
-    })
-    .eq("id", admin.id);
+      shopId,
+    });
 
-  if (updateError) {
+    return { success: true };
+  } catch {
     return { success: false, error: "관리자 정보 수정 중 오류가 발생했습니다." };
   }
-
-  // 세션 갱신
-  await createSession({
-    role: "shop_admin",
-    userId: admin.id,
-    name: trimmedNewName,
-    shopId,
-  });
-
-  return { success: true };
 }

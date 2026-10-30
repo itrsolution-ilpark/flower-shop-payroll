@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v38 · 완성도 100% · 마지막 수정 2026. 10. 29. 18시 17분 52초
+> 문서 버전 v40 · 완성도 100% · 마지막 수정 2026. 10. 30. 11시 42분 32초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -10,16 +10,16 @@
 | 사이트 이름 | 플라워샵 근무 관리 |
 | 영문 식별자(slug) | flower-shop-payroll |
 | 개발 방식(framework) | nextjs |
-| 데이터베이스 사용 | 예 (Supabase) |
+| 데이터베이스 사용 | 예 (Neon PostgreSQL) |
 | 배포 | GitHub → Vercel (무료) |
 
 ## 1. 데이터 모델
 
-### 데이터베이스 스키마 (Supabase SQL Editor 전체 실행 스크립트)
-모든 비밀은 단방향 해시(bcrypt 또는 crypto 해시)로 암호화되어 `pin_hash`에 저장되며 화면이나 클라이언트에 절대 노출되지 않습니다. 아래 스크립트는 기존의 42501 오류를 원천 방지할 수 있도록 테이블과 RLS를 완전히 새로 구성합니다.
+### 데이터베이스 스키마 (Neon PostgreSQL 전체 실행 DDL)
+모든 4자리 비밀은 단방향 해시(bcrypt 또는 crypto sha256)로 암호화되어 `pin_hash`에 저장되며 화면이나 클라이언트에 절대 노출되지 않습니다. Neon 콘솔의 SQL Editor에서 아래 스크립트를 한 번에 실행합니다.
 
 ```sql
--- 1. 기존 테이블 일괄 정리
+-- 1. 기존 테이블 정리 (외래키 종속성 순서대로 삭제)
 DROP TABLE IF EXISTS auth_attempts CASCADE;
 DROP TABLE IF EXISTS attendance CASCADE;
 DROP TABLE IF EXISTS compensation CASCADE;
@@ -30,110 +30,96 @@ DROP TABLE IF EXISTS system_admins CASCADE;
 
 -- 2. 시스템 관리자 테이블
 CREATE TABLE system_admins (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  pin_hash text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 3. 플라워샵 테이블
 CREATE TABLE shops (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 4. 플라워샵별 관리자 테이블 (플라워샵당 단 1명)
 CREATE TABLE shop_admins (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id uuid NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  pin_hash text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 5. 플라워샵 직원 테이블 (대표 관리자는 여기에 포함되지 않음)
 CREATE TABLE staff (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id uuid NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  pin_hash text NOT NULL,
-  status text NOT NULL DEFAULT 'pending'
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'active', 'resigned')),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  resigned_at timestamptz,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resigned_at TIMESTAMPTZ,
   UNIQUE (shop_id, name)
 );
 
 -- 6. 급여 조건 테이블 (시급 또는 월급)
 CREATE TABLE compensation (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-  pay_type text NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
-  amount_krw integer NOT NULL CHECK (amount_krw > 0),
-  effective_from date NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  pay_type TEXT NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
+  amount_krw INTEGER NOT NULL CHECK (amount_krw > 0),
+  effective_from DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (staff_id, effective_from)
 );
 
 -- 7. 출퇴근 근무 기록 테이블 (시급 직원 전용)
 CREATE TABLE attendance (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  staff_id uuid NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-  work_date date NOT NULL,
-  clock_in time NOT NULL,
-  clock_out time NOT NULL,
-  total_minutes integer NOT NULL CHECK (total_minutes > 0),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  work_date DATE NOT NULL,
+  clock_in TIME NOT NULL,
+  clock_out TIME NOT NULL,
+  total_minutes INTEGER NOT NULL CHECK (total_minutes > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (staff_id, work_date),
   CHECK (clock_out > clock_in)
 );
 
--- 8. 인증 실패 차단 기록 테이블
+-- 8. 로그인 실패 차단 기록 테이블
 CREATE TABLE auth_attempts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  identity_hash text NOT NULL,
-  attempted_at timestamptz NOT NULL DEFAULT now(),
-  succeeded boolean NOT NULL DEFAULT false
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identity_hash TEXT NOT NULL,
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  succeeded BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- 9. RLS(행 수준 보안) 활성화
-ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shop_admins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compensation ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY;
-
--- 10. 공개 RLS 차단 정책 (직접 브라우저 anon 호출 거부, Service Role 서버 통신만 허용)
-CREATE POLICY "Deny client access to system_admins" ON system_admins FOR ALL USING (false);
-CREATE POLICY "Deny client access to shops" ON shops FOR ALL USING (false);
-CREATE POLICY "Deny client access to shop_admins" ON shop_admins FOR ALL USING (false);
-CREATE POLICY "Deny client access to staff" ON staff FOR ALL USING (false);
-CREATE POLICY "Deny client access to compensation" ON compensation FOR ALL USING (false);
-CREATE POLICY "Deny client access to attendance" ON attendance FOR ALL USING (false);
-CREATE POLICY "Deny client access to auth_attempts" ON auth_attempts FOR ALL USING (false);
+-- 9. 인덱스 생성
+CREATE INDEX idx_staff_shop_id ON staff(shop_id);
+CREATE INDEX idx_attendance_staff_id_date ON attendance(staff_id, work_date);
+CREATE INDEX idx_compensation_staff_id ON compensation(staff_id, effective_from DESC);
+CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempted_at DESC);
 ```
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 스택 및 라이브러리
+### 기술 스택 및 환경
 - **Framework**: Next.js 14+ (App Router, Server Actions)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **Database & Auth**: Supabase PostgreSQL (서버 측 `@supabase/supabase-js` 연동)
-- **Date/Time**: `date-fns`
-- **Icon**: `lucide-react`
+- **Database**: Neon PostgreSQL (`pg` 또는 `@neondatabase/serverless` POOL 모드)
+- **Date Library**: `date-fns`
+- **Icons**: `lucide-react`
 
 ### 환경 변수 명세
-| 환경 변수명 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | 필수 | Supabase 프로젝트 URL (공개 가능) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 필수 | Supabase Anon Key (공개 가능) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **필수** | **Supabase Service Role Key**. Server Actions 전용 DB 클라이언트에서 RLS 우회 및 CRUD 수행에 필수 (브라우저 노출 금지) |
-| `APP_SESSION_SECRET` | 필수 | 쿠키 세션 암호화 및 서명용 32자 이상 랜덤 문자열 |
+| 환경 변수명 | 필수 여부 | 브라우저 노출 | 설명 |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | **필수** | **금지 (서버 전용)** | Neon PostgreSQL 연결 스트링 (`postgres://...`) |
+| `APP_SESSION_SECRET` | **필수** | **금지 (서버 전용)** | 쿠키 세션 암호화 및 서명용 32자 이상 비밀키 |
 
 ### 소스 트리 구조
 ```text
@@ -143,9 +129,7 @@ flower-shop-payroll/
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── .env.example
-├── supabase/
-│   └── migrations/
-│       └── 0001_initial_schema.sql
+├── schema.sql
 └── src/
     ├── app/
     │   ├── layout.tsx
@@ -159,22 +143,22 @@ flower-shop-payroll/
     │   ├── admin/attendance/page.tsx
     │   └── employee/dashboard/page.tsx
     ├── actions/
-    │   ├── systemAdminActions.ts  // 시스템 관리자 등록, 로그인
+    │   ├── systemAdminActions.ts  // 시스템 관리자 등록/인증
     │   ├── shopActions.ts         // 플라워샵 목록, 등록, 수정
-    │   ├── shopAdminActions.ts    // 플라워샵별 관리자 등록, 로그인, 본인 수정
-    │   ├── staffActions.ts        // 직원 가입신청, 승인, 상태변경, 비밀변경
-    │   └── attendanceActions.ts   // 출퇴근 등록, 수정, 월별 정산 집계
+    │   ├── shopAdminActions.ts    // 관리자 등록, 인증, 본인정보 수정
+    │   ├── staffActions.ts        // 직원 신청, 승인, 상태, 급여조건, 비밀변경
+    │   └── attendanceActions.ts   // 출퇴근 등록/수정, 월별 급여 집계
     ├── components/
-    │   ├── ProgramBanner.tsx      // 공통 상단 프로그램 배너
-    │   ├── SecretField.tsx        // 4자리 숫자 '비밀', '비밀 확인' 전용 인풋
-    │   ├── MonthPicker.tsx        // 정산 월 선택기 (YYYY-MM)
-    │   ├── TimePicker.tsx         // 출퇴근 시간 선택 드롭다운/입력 UI
-    │   └── StatusBadge.tsx        // 대기, 재직, 퇴사 뱃지
+    │   ├── ProgramBanner.tsx      // 공통 상단 배너
+    │   ├── SecretField.tsx        // 4자리 숫자 '비밀', '비밀 확인' 전용 컴포넌트
+    │   ├── MonthPicker.tsx        // 정산 월 선택 컴포넌트
+    │   ├── TimePicker.tsx         // 출퇴근 시간 선택 컴포넌트
+    │   └── StatusBadge.tsx        // 상태 표시 뱃지
     └── lib/
-        ├── supabase-server.ts     // SUPABASE_SERVICE_ROLE_KEY를 사용하는 서버 전용 싱글톤 클라이언트
-        ├── session.ts             // 쿠키 기반 서버 세션 암호화/복호화
-        ├── hash.ts                // 4자리 비밀 해시 생성 및 검증
-        └── payroll.ts             // 시급/월급 급여 계산 유틸리티
+        ├── db.ts                  // Neon PostgreSQL pg.Pool 싱글톤 인스턴스
+        ├── session.ts             // 쿠키 기반 세션 암호화 유틸리티
+        ├── hash.ts                // 4자리 비밀 단방향 해시 생성 및 검증
+        └── payroll.ts             // 시급/월급 급여 정산 알고리즘 모듈
 ```
 
 ## 3. 품질 기준 (성능·보안·접근성)
@@ -194,6 +178,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v40 | 2026. 10. 30. 9시 50분 8초 | 최종 감수: 최종 감수 완료: Neon DB 기반 전체 기능·화면·테스트·배포 아키텍처 정합성 검증 및 개발 착수 문서 확정 |
+| v39 | 2026. 10. 30. 9시 46분 22초 | 데이터베이스를 Neon PostgreSQL 아키텍처로 전환하고 스키마, 서버 연결 방식, 배포 및 환경 변수 명세를 최신화했습니다. |
 | v38 | 2026. 10. 29. 17시 55분 40초 | 최종 감수: 최종 감수 완료: 42501(RLS 정책 위반) 방지를 위한 Server Actions 아키텍처 및 Supabase SQL 스키마 최종 확정, 컴포넌트 및 환경변수 완비 |
 | v37 | 2026. 10. 29. 17시 52분 33초 | 변경된 모델과 요구사항을 바탕으로 Supabase 스키마, RLS 정책 가이드, 서버 액션 구현 명세를 완벽히 정돈하여 재생성 준비를 완료했습니다. |
 | v36 | 2026. 10. 29. 17시 45분 5초 | Supabase RLS(42501) 오류 해결을 위한 서버 전용 클라이언트(service_role) 사용 강제 및 데이터베이스 초기화 재적용 규칙 보강 |
