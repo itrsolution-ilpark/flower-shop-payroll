@@ -1,14 +1,5 @@
--- 1. 기존 테이블 정리
-DROP TABLE IF EXISTS auth_attempts CASCADE;
-DROP TABLE IF EXISTS attendance CASCADE;
-DROP TABLE IF EXISTS compensation CASCADE;
-DROP TABLE IF EXISTS staff CASCADE;
-DROP TABLE IF EXISTS shop_admins CASCADE;
-DROP TABLE IF EXISTS shops CASCADE;
-DROP TABLE IF EXISTS system_admins CASCADE;
-
 -- 2. 시스템 관리자 테이블 (복수 등록 지원, 6자리 비밀번호)
-CREATE TABLE system_admins (
+CREATE TABLE IF NOT EXISTS system_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
   pin_hash TEXT NOT NULL,
@@ -16,7 +7,7 @@ CREATE TABLE system_admins (
 );
 
 -- 3. 플라워샵 테이블 (상태: active, inactive)
-CREATE TABLE shops (
+CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
@@ -24,7 +15,7 @@ CREATE TABLE shops (
 );
 
 -- 4. 플라워샵 관리자 테이블 (플라워샵별 복수 등록 지원, 6자리 비밀번호)
-CREATE TABLE shop_admins (
+CREATE TABLE IF NOT EXISTS shop_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -34,7 +25,7 @@ CREATE TABLE shop_admins (
 );
 
 -- 5. 플라워샵 직원 테이블 (상태: pending, approved, resigned, 4자리 비밀번호)
-CREATE TABLE staff (
+CREATE TABLE IF NOT EXISTS staff (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -47,7 +38,7 @@ CREATE TABLE staff (
 );
 
 -- 6. 직원 급여 조건 테이블 (시급/월급, 시간/분 단위 정산)
-CREATE TABLE compensation (
+CREATE TABLE IF NOT EXISTS compensation (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
   pay_type TEXT NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
@@ -59,7 +50,7 @@ CREATE TABLE compensation (
 );
 
 -- 7. 출퇴근 근무 기록 테이블 (시급 직원용 일별 기록)
-CREATE TABLE attendance (
+CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
   work_date DATE NOT NULL,
@@ -73,7 +64,7 @@ CREATE TABLE attendance (
 );
 
 -- 8. 무차별 대입 공격 방지 테이블
-CREATE TABLE auth_attempts (
+CREATE TABLE IF NOT EXISTS auth_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_hash TEXT NOT NULL,
   attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -81,9 +72,9 @@ CREATE TABLE auth_attempts (
 );
 
 -- 9. 성능 최적화 인덱스
-CREATE INDEX idx_shops_status ON shops(status);
-CREATE INDEX idx_shop_admins_shop_id ON shop_admins(shop_id);
-CREATE INDEX idx_staff_shop_status ON staff(shop_id, status);
-CREATE INDEX idx_compensation_staff ON compensation(staff_id, effective_from DESC);
-CREATE INDEX idx_attendance_staff_date ON attendance(staff_id, work_date);
-CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shops_status ON shops(status);
+CREATE INDEX IF NOT EXISTS idx_shop_admins_shop_id ON shop_admins(shop_id);
+CREATE INDEX IF NOT EXISTS idx_staff_shop_status ON staff(shop_id, status);
+CREATE INDEX IF NOT EXISTS idx_compensation_staff ON compensation(staff_id, effective_from DESC);
+CREATE INDEX IF NOT EXISTS idx_attendance_staff_date ON attendance(staff_id, work_date);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_identity ON auth_attempts(identity_hash, attempted_at DESC);

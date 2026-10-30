@@ -21,8 +21,9 @@ APP_SESSION_SECRET=super-secret-random-key-at-least-32-chars
 ```
 
 ## 4. 데이터베이스 마이그레이션 (Neon PostgreSQL)
-1. Neon 콘솔(console.neon.tech)에 접속하여 사용 중인 프로젝트의 **SQL Editor**로 이동합니다.
-2. `schema.sql` (또는 `db/migrations/001_initial_schema.sql`) 파일의 DDL 전체를 복사하여 SQL Editor에 붙여넣고 `Run` 버튼을 실행하여 테이블 및 인덱스를 구축합니다.
+배포 시 `db/migrations/`의 SQL 파일이 순서대로 적용되며, 적용된 파일명과 체크섬은 DB에 기록되어 이후 배포에서는 다시 실행되지 않습니다. 기존 마이그레이션 파일은 수정하지 마세요. 테이블 변경이 필요하면 다음 번호의 새 파일을 추가하고 `ALTER TABLE`로 변경합니다. 테이블 삭제·재생성은 기존 데이터를 손실시킬 수 있으므로 사용하지 않습니다.
+
+새 DB를 수동으로 초기화할 때만 Neon 콘솔의 **SQL Editor**에서 `schema.sql`을 실행하세요. 이 파일은 기존 테이블을 삭제하지 않으며, 이미 존재하는 테이블과 인덱스는 건너뜁니다.
 
 ## 5. 실행 방법
 ### 개발 서버 실행
