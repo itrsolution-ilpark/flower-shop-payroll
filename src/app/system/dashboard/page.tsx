@@ -16,189 +16,153 @@ import {
   SystemAdminItem,
 } from "@/actions/systemActions";
 import { logoutAction } from "@/actions/authActions";
-import { ShieldAlert, Store, UserPlus, LogOut, Edit2, Check, X, Building2, ShieldCheck } from "lucide-react";
+import { Shield, Store, UserPlus, LogOut, Edit2, Check, RefreshCw } from "lucide-react";
 
 export default function SystemDashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"shops" | "admins">("shops");
+
   const [adminName, setAdminName] = useState<string>("");
   const [shops, setShops] = useState<SystemShopItem[]>([]);
   const [admins, setAdmins] = useState<SystemAdminItem[]>([]);
+
+  const [activeTab, setActiveTab] = useState<"shops" | "admins">("shops");
   const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
-  // 플라워샵 등록 폼
+  // 플라워샵 개설
   const [newShopName, setNewShopName] = useState<string>("");
-  const [createShopError, setCreateShopError] = useState<string>("");
-  const [createShopSuccess, setCreateShopSuccess] = useState<string>("");
-  const [submittingShop, setSubmittingShop] = useState<boolean>(false);
+  const [creatingShop, setCreatingShop] = useState<boolean>(false);
 
-  // 플라워샵 이름 수정 상태
+  // 플라워샵 이름 수정
   const [editingShopId, setEditingShopId] = useState<string | null>(null);
   const [editingShopName, setEditingShopName] = useState<string>("");
 
-  // 추가 시스템 관리자 등록 폼 (6자리)
+  // 추가 시스템 관리자 등록
   const [newAdminName, setNewAdminName] = useState<string>("");
   const [newAdminPin, setNewAdminPin] = useState<string>("");
-  const [addAdminError, setAddAdminError] = useState<string>("");
-  const [addAdminSuccess, setAddAdminSuccess] = useState<string>("");
-  const [submittingAdmin, setSubmittingAdmin] = useState<boolean>(false);
+  const [addingAdmin, setAddingAdmin] = useState<boolean>(false);
+  const [adminAddMsg, setAdminAddMsg] = useState<string>("");
 
-  const loadDashboardData = async () => {
+  const loadData = async () => {
     setLoading(true);
-    try {
-      const data = await getSystemDashboardDataAction();
-      if (!data) {
-        router.replace("/system/login");
-        return;
-      }
-      setAdminName(data.currentAdminName);
-      setShops(data.shops);
-      setAdmins(data.admins);
-    } catch {
+    setErrorMsg("");
+
+    const data = await getSystemDashboardDataAction();
+    if (!data) {
       router.replace("/system/login");
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    setAdminName(data.currentAdminName);
+    setShops(data.shops);
+    setAdmins(data.admins);
+    setLoading(false);
   };
 
   useEffect(() => {
-    loadDashboardData();
+    loadData();
   }, []);
 
-  const handleLogout = async () => {
-    await logoutAction();
-    router.push("/");
-  };
-
-  // 플라워샵 등록
+  // 신규 플라워샵 개설
   const handleCreateShop = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCreateShopError("");
-    setCreateShopSuccess("");
+    if (!newShopName.trim()) return;
 
-    if (!newShopName.trim()) {
-      setCreateShopError("플라워샵 이름을 입력해주세요.");
+    setCreatingShop(true);
+    const res = await createShopBySystemAdminAction(newShopName);
+    if (!res.success) {
+      alert(res.error || "플라워샵 개설 중 오류가 발생했습니다.");
+      setCreatingShop(false);
       return;
     }
 
-    setSubmittingShop(true);
-    try {
-      const res = await createShopBySystemAdminAction(newShopName);
-      if (!res.success) {
-        setCreateShopError(res.error || "플라워샵 개설에 실패했습니다.");
-        setSubmittingShop(false);
-        return;
-      }
-      setCreateShopSuccess("신규 플라워샵이 성공적으로 개설되었습니다.");
-      setNewShopName("");
-      await loadDashboardData();
-    } catch {
-      setCreateShopError("처리 중 오류가 발생했습니다.");
-    } finally {
-      setSubmittingShop(false);
-    }
+    setNewShopName("");
+    setCreatingShop(false);
+    await loadData();
   };
 
   // 플라워샵 이름 수정
-  const handleStartEditShop = (shop: SystemShopItem) => {
-    setEditingShopId(shop.id);
-    setEditingShopName(shop.name);
-  };
-
   const handleSaveShopName = async (shopId: string) => {
     if (!editingShopName.trim()) return;
-    try {
-      const res = await updateShopNameBySystemAdminAction(shopId, editingShopName);
-      if (res.success) {
-        setEditingShopId(null);
-        await loadDashboardData();
-      } else {
-        alert(res.error || "이름 수정에 실패했습니다.");
-      }
-    } catch {
-      alert("수정 처리 중 오류가 발생했습니다.");
+
+    const res = await updateShopNameBySystemAdminAction(shopId, editingShopName);
+    if (!res.success) {
+      alert(res.error || "이름 수정 중 오류가 발생했습니다.");
+      return;
     }
+
+    setEditingShopId(null);
+    await loadData();
   };
 
-  // 플라워샵 상태 토글
-  const handleToggleShopStatus = async (shop: SystemShopItem) => {
-    const nextStatus = shop.status === "active" ? "inactive" : "active";
-    const confirmText =
-      nextStatus === "inactive"
-        ? `"${shop.name}"을(를) 비활성화하시겠습니까? 해당 매장 소속 관리자 및 직원의 접속이 즉시 차단됩니다.`
-        : `"${shop.name}"을(를) 활성화하시겠습니까?`;
-
-    if (!confirm(confirmText)) return;
-
-    try {
-      const res = await toggleShopStatusAction(shop.id, nextStatus);
-      if (res.success) {
-        await loadDashboardData();
-      } else {
-        alert(res.error || "상태 변경에 실패했습니다.");
-      }
-    } catch {
-      alert("상태 변경 중 오류가 발생했습니다.");
+  // 플라워샵 상태 active ↔ inactive 토글
+  const handleToggleStatus = async (shopId: string, currentStatus: "active" | "inactive") => {
+    const nextStatus = currentStatus === "active" ? "inactive" : "active";
+    const res = await toggleShopStatusAction(shopId, nextStatus);
+    if (!res.success) {
+      alert(res.error || "상태 변경 실패");
+      return;
     }
+
+    await loadData();
   };
 
-  // 추가 시스템 관리자 등록 (6자리)
-  const handleAddAdmin = async (e: React.FormEvent) => {
+  // 추가 시스템 관리자 등록
+  const handleAddSystemAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAddAdminError("");
-    setAddAdminSuccess("");
+    setAdminAddMsg("");
 
     if (!newAdminName.trim()) {
-      setAddAdminError("관리자 이름을 입력해주세요.");
+      setAdminAddMsg("관리자 이름을 입력해주세요.");
       return;
     }
     if (newAdminPin.length !== 6) {
-      setAddAdminError("비밀번호는 숫자 6자리여야 합니다.");
+      setAdminAddMsg("시스템 관리자 비밀번호는 숫자 6자리여야 합니다.");
       return;
     }
 
-    setSubmittingAdmin(true);
-    try {
-      const res = await addSystemAdminAction(newAdminName, newAdminPin);
-      if (!res.success) {
-        setAddAdminError(res.error || "추가 시스템 관리자 등록에 실패했습니다.");
-        setSubmittingAdmin(false);
-        return;
-      }
-      setAddAdminSuccess("추가 시스템 관리자가 안전하게 생성되었습니다.");
-      setNewAdminName("");
-      setNewAdminPin("");
-      await loadDashboardData();
-    } catch {
-      setAddAdminError("처리 중 오류가 발생했습니다.");
-    } finally {
-      setSubmittingAdmin(false);
+    setAddingAdmin(true);
+    const res = await addSystemAdminAction(newAdminName, newAdminPin);
+    if (!res.success) {
+      setAdminAddMsg(res.error || "관리자 추가 실패");
+      setAddingAdmin(false);
+      return;
     }
+
+    setAdminAddMsg("추가 시스템 관리자가 등록되었습니다.");
+    setNewAdminName("");
+    setNewAdminPin("");
+    setAddingAdmin(false);
+    await loadData();
+  };
+
+  const handleLogout = async () => {
+    await logoutAction();
+    router.push("/system/login");
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col flex-1">
+      <div className="flex flex-col min-h-screen">
         <Banner />
         <div className="flex flex-1 items-center justify-center p-6 text-xs text-slate-500">
-          대시보드 데이터를 로드하는 중...
+          시스템 관리자 데이터를 불러오는 중...
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50">
-      {/* 상단 헤더: 관리자 이름 및 로그아웃 버튼 */}
+    <div className="flex flex-col min-h-screen bg-[#F8FAFC]">
       <Banner
         rightElement={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-slate-700 hidden sm:inline">
-              시스템 관리자: <strong className="text-slate-900">{adminName}님</strong>
+              시스템 관리자 {adminName} 님
             </span>
             <button
               onClick={handleLogout}
-              className="px-3 min-h-[38px] h-[38px] bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+              className="px-3 min-h-[38px] h-[38px] bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 transition flex items-center gap-1.5"
             >
               <LogOut className="w-3.5 h-3.5" />
               로그아웃
@@ -207,189 +171,185 @@ export default function SystemDashboardPage() {
         }
       />
 
-      <main className="max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6">
-        {/* 상단 탭 navigation */}
+      <main className="flex-1 max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6 pb-20">
+        {/* 헤더 요약 */}
+        <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              <Shield className="w-3.5 h-3.5 text-emerald-400" />
+              최고 총괄 관리자 모드
+            </div>
+            <h2 className="text-xl font-extrabold tracking-tight">시스템 전체 관리 대시보드</h2>
+            <p className="text-xs text-slate-300">
+              플라워샵 개설, 상태 제어(`active`/`inactive`), 추가 시스템 관리자를 총괄 운영합니다.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={loadData}
+              className="px-3 min-h-[38px] h-[38px] bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              새로고침
+            </button>
+          </div>
+        </div>
+
+        {/* 탭 버튼 */}
         <div className="flex border-b border-slate-200 gap-2">
           <button
             onClick={() => setActiveTab("shops")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 font-bold text-sm border-b-2 transition flex items-center gap-2 ${
               activeTab === "shops"
                 ? "border-slate-900 text-slate-900"
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
-            <Building2 className="w-4 h-4" />
-            탭 1 [플라워샵 등록/관리]
+            <Store className="w-4 h-4" />
+            플라워샵 개설/상태 관리 ({shops.length})
           </button>
           <button
             onClick={() => setActiveTab("admins")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 font-bold text-sm border-b-2 transition flex items-center gap-2 ${
               activeTab === "admins"
                 ? "border-slate-900 text-slate-900"
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
-            탭 2 [시스템 관리자 관리]
+            <UserPlus className="w-4 h-4" />
+            시스템 관리자 목록 ({admins.length})
           </button>
         </div>
 
-        {activeTab === "shops" ? (
+        {/* 탭 1: 플라워샵 개설 / 관리 */}
+        {activeTab === "shops" && (
           <div className="space-y-6">
-            {/* 신규 플라워샵 개설 폼 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <Store className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-base font-bold text-slate-900">신규 플라워샵 개설</h3>
-              </div>
-
-              <form onSubmit={handleCreateShop} className="flex flex-col sm:flex-row gap-3">
+            {/* 개설 폼 */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <h3 className="text-sm font-bold text-slate-900">신규 플라워샵 개설</h3>
+              <form onSubmit={handleCreateShop} className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={newShopName}
                   onChange={(e) => setNewShopName(e.target.value)}
-                  placeholder="새 플라워샵 이름 입력 (예: 강남 본점)"
-                  className="flex-1 min-h-[46px] h-[46px] px-3.5 border border-slate-200 rounded-xl text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  placeholder="신규 플라워샵 이름 입력"
+                  className="flex-1 min-h-[46px] h-[46px] px-3.5 border border-slate-200 rounded-xl text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-800"
                 />
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="sm:w-36 shrink-0"
-                  disabled={submittingShop}
-                >
-                  {submittingShop ? "개설 중..." : "플라워샵 개설"}
+                <Button type="submit" variant="secondary" className="sm:w-auto px-6" disabled={creatingShop}>
+                  {creatingShop ? "개설 중..." : "플라워샵 개설"}
                 </Button>
               </form>
-
-              {createShopError && (
-                <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-200">
-                  {createShopError}
-                </p>
-              )}
-              {createShopSuccess && (
-                <p className="text-xs text-emerald-700 font-medium bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
-                  {createShopSuccess}
-                </p>
-              )}
             </div>
 
-            {/* 플라워샵 목록 */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-900">전체 플라워샵 목록 및 상태 관리</h3>
-                <span className="text-xs text-slate-500">총 {shops.length}개 개설됨</span>
-              </div>
+            {/* 목록 테이블 (모바일 대응 수평 스크롤) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-900">전체 플라워샵 등록 현황</h3>
 
-              {shops.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-500">
-                  등록된 플라워샵이 없습니다. 위 폼에서 신규 플라워샵을 개설하세요.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                        <th className="p-3.5 pl-6">플라워샵명</th>
-                        <th className="p-3.5">운영 상태</th>
-                        <th className="p-3.5">소속 관리자 수</th>
-                        <th className="p-3.5">재직 직원 / 총 직원</th>
-                        <th className="p-3.5">개설일</th>
-                        <th className="p-3.5 pr-6 text-right">상태 토글 및 관리</th>
+              <div className="w-full overflow-x-auto whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
+                <table className="w-full text-xs text-left border-collapse min-w-[640px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                      <th className="py-2.5 px-3">플라워샵명</th>
+                      <th className="py-2.5 px-3">운영 상태</th>
+                      <th className="py-2.5 px-3">소속 관리자</th>
+                      <th className="py-2.5 px-3">재직 직원 / 전체</th>
+                      <th className="py-2.5 px-3">개설일</th>
+                      <th className="py-2.5 px-3 text-center">상태 토글 및 수정</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {shops.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-6 text-slate-400">
+                          등록된 플라워샵이 없습니다.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {shops.map((shop) => (
+                    ) : (
+                      shops.map((shop) => (
                         <tr key={shop.id} className="hover:bg-slate-50 transition">
-                          <td className="p-3.5 pl-6 font-bold text-slate-900">
+                          <td className="py-3 px-3 font-bold text-slate-900">
                             {editingShopId === shop.id ? (
-                              <div className="flex items-center gap-1.5 max-w-xs">
+                              <div className="flex items-center gap-1.5">
                                 <input
                                   type="text"
                                   value={editingShopName}
                                   onChange={(e) => setEditingShopName(e.target.value)}
-                                  className="px-2 py-1 border border-slate-300 rounded text-xs font-normal"
+                                  className="px-2 py-1 border border-slate-300 rounded text-xs bg-white text-slate-900"
                                 />
                                 <button
                                   onClick={() => handleSaveShopName(shop.id)}
                                   className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
-                                  title="저장"
                                 >
                                   <Check className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingShopId(null)}
-                                  className="p-1 bg-slate-300 text-slate-700 rounded hover:bg-slate-400"
-                                  title="취소"
-                                >
-                                  <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
                                 <span>{shop.name}</span>
                                 <button
-                                  onClick={() => handleStartEditShop(shop)}
+                                  onClick={() => {
+                                    setEditingShopId(shop.id);
+                                    setEditingShopName(shop.name);
+                                  }}
                                   className="text-slate-400 hover:text-slate-700"
-                                  title="이름 수정"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <Edit2 className="w-3 h-3" />
                                 </button>
                               </div>
                             )}
                           </td>
-                          <td className="p-3.5">
+                          <td className="py-3 px-3">
                             <StatusBadge status={shop.status} />
                           </td>
-                          <td className="p-3.5 font-semibold text-slate-800">
+                          <td className="py-3 px-3 font-semibold text-slate-800">
                             {shop.admin_count}명
                           </td>
-                          <td className="p-3.5 text-slate-600">
-                            <span className="font-semibold text-emerald-700">
+                          <td className="py-3 px-3 text-slate-700">
+                            <span className="font-bold text-emerald-700">
                               {shop.approved_staff_count}명
                             </span>{" "}
                             / {shop.total_staff_count}명
                           </td>
-                          <td className="p-3.5 text-slate-500">{shop.created_at}</td>
-                          <td className="p-3.5 pr-6 text-right">
+                          <td className="py-3 px-3 text-slate-500">{shop.created_at}</td>
+                          <td className="py-3 px-3 text-center">
                             <button
-                              onClick={() => handleToggleShopStatus(shop)}
-                              className={`px-3 py-1.5 rounded-xl font-semibold text-xs transition ${
+                              onClick={() => handleToggleStatus(shop.id, shop.status)}
+                              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
                                 shop.status === "active"
-                                  ? "bg-rose-100 text-rose-800 hover:bg-rose-200"
-                                  : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
                               }`}
                             >
                               {shop.status === "active" ? "비활성화 처리" : "활성화 처리"}
                             </button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        ) : (
-          <div className="space-y-6">
-            {/* 추가 시스템 관리자 등록 폼 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-lg">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <UserPlus className="w-5 h-5 text-slate-800" />
-                <h3 className="text-base font-bold text-slate-900">추가 시스템 관리자 등록</h3>
-              </div>
+        )}
 
-              <form onSubmit={handleAddAdmin} className="space-y-4">
+        {/* 탭 2: 시스템 관리자 관리 */}
+        {activeTab === "admins" && (
+          <div className="space-y-6">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-md">
+              <h3 className="text-sm font-bold text-slate-900">추가 시스템 관리자 등록</h3>
+              <form onSubmit={handleAddSystemAdmin} className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-800 mb-1">
-                    새 관리자 이름
+                    관리자 이름
                   </label>
                   <input
                     type="text"
                     value={newAdminName}
                     onChange={(e) => setNewAdminName(e.target.value)}
                     placeholder="이름 입력"
-                    className="w-full min-h-[46px] h-[46px] px-3.5 border border-slate-200 rounded-xl text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    className="w-full min-h-[42px] h-[42px] px-3 border border-slate-200 rounded-xl text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-800"
                   />
                 </div>
 
@@ -400,46 +360,28 @@ export default function SystemDashboardPage() {
                   length={6}
                 />
 
-                {addAdminError && (
-                  <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-200">
-                    {addAdminError}
-                  </p>
-                )}
-                {addAdminSuccess && (
-                  <p className="text-xs text-emerald-700 font-medium bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
-                    {addAdminSuccess}
+                {adminAddMsg && (
+                  <p className="text-xs font-semibold text-center bg-slate-50 p-2 rounded-lg border border-slate-200 text-slate-800">
+                    {adminAddMsg}
                   </p>
                 )}
 
-                <Button type="submit" variant="secondary" disabled={submittingAdmin}>
-                  {submittingAdmin ? "등록 중..." : "시스템 관리자 추가"}
+                <Button type="submit" variant="secondary" disabled={addingAdmin}>
+                  {addingAdmin ? "등록 중..." : "추가 시스템 관리자 생성"}
                 </Button>
               </form>
             </div>
 
-            {/* 등록된 시스템 관리자 목록 */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
-              <div className="p-4 md:p-6 border-b border-slate-100">
-                <h3 className="text-base font-bold text-slate-900">등록된 시스템 관리자 목록</h3>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {admins.map((admin) => (
-                  <div key={admin.id} className="p-4 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
-                        {admin.name.slice(0, 1)}
-                      </div>
-                      <div>
-                        <span className="font-bold text-slate-900 text-sm block">
-                          {admin.name}
-                        </span>
-                        <span className="text-slate-500">등록일: {admin.created_at}</span>
-                      </div>
-                    </div>
-                    <span className="px-2.5 py-1 bg-slate-100 text-slate-800 rounded-full text-xs font-semibold">
-                      최고 관리자
-                    </span>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <h3 className="text-sm font-bold text-slate-900">등록된 시스템 관리자 목록</h3>
+              <div className="space-y-2 max-w-md">
+                {admins.map((adm) => (
+                  <div
+                    key={adm.id}
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs"
+                  >
+                    <span className="font-bold text-slate-900">{adm.name}</span>
+                    <span className="text-slate-500">생성일: {adm.created_at}</span>
                   </div>
                 ))}
               </div>

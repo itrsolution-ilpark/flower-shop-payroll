@@ -243,6 +243,58 @@ export async function getShopAdminDashboardDataAction(
 }
 
 /**
+ * 추가 관리자 전용 관리 페이지 (/shop-admin/admins) 데이터 조회
+ */
+export async function getShopAdminsPageDataAction(): Promise<{
+  success: boolean;
+  error?: string;
+  data?: {
+    shopName: string;
+    currentAdminName: string;
+    admins: ShopAdminInfo[];
+  };
+}> {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== "shop_admin" || !session.shopId) {
+      return { success: false, error: "플라워샵 관리자 권한이 필요합니다." };
+    }
+
+    const shopRes = await query<{ name: string; status: string }>(
+      "SELECT name, status FROM shops WHERE id = $1",
+      [session.shopId]
+    );
+
+    if (shopRes.rows.length === 0 || shopRes.rows[0].status !== "active") {
+      return { success: false, error: "비활성화되었거나 존재하지 않는 플라워샵입니다." };
+    }
+
+    const adminsRes = await query<{
+      id: string;
+      name: string;
+      created_at: string;
+    }>(
+      `SELECT id, name, TO_CHAR(created_at, 'YYYY-MM-DD') as created_at
+       FROM shop_admins
+       WHERE shop_id = $1
+       ORDER BY created_at ASC`,
+      [session.shopId]
+    );
+
+    return {
+      success: true,
+      data: {
+        shopName: shopRes.rows[0].name,
+        currentAdminName: session.name,
+        admins: adminsRes.rows,
+      },
+    };
+  } catch {
+    return { success: false, error: "관리자 데이터를 로드할 수 없습니다." };
+  }
+}
+
+/**
  * F-05: 직원 승인 및 급여 조건 최초 설정
  */
 export async function approveStaffAction(
@@ -339,11 +391,12 @@ export async function resignStaffAction(
 }
 
 /**
- * 소속 플라워샵의 추가 관리자 등록
+ * 소속 플라워샵의 추가 관리자 등록 (비밀번호 확인 검증 포함)
  */
 export async function addShopAdminAction(
   name: string,
-  pin: string
+  pin: string,
+  confirmPin?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const session = await getSession();
@@ -355,6 +408,9 @@ export async function addShopAdminAction(
     if (!trimmedName) return { success: false, error: "관리자 이름을 입력해주세요." };
     if (!isValidAdminPinFormat(pin)) {
       return { success: false, error: "관리자 비밀번호는 숫자 6자리여야 합니다." };
+    }
+    if (confirmPin !== undefined && pin !== confirmPin) {
+      return { success: false, error: "비밀번호 확인이 일치하지 않습니다." };
     }
 
     const pinHash = hashPin(pin);

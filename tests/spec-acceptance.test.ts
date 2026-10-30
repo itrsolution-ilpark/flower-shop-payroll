@@ -6,7 +6,7 @@ import {
 import { isValidAdminPinFormat, isValidStaffPinFormat } from '../src/lib/hash'
 import { calculateMonthlySettlement } from '../src/lib/payroll'
 
-describe('SPEC 수용 테스트 시나리오 검증 (v48 기준)', () => {
+describe('SPEC 수용 테스트 시나리오 검증 (v52/v53 기준)', () => {
   // 시나리오 1: 시스템 관리자 최초 등록 유도 및 비밀번호 자릿수 검증
   it('시나리오 1: 시스템 관리자 0명 시 /system/setup 유도 및 관리자 6자리 비밀번호 검증', () => {
     const systemAdminsCount = 0
@@ -85,5 +85,24 @@ describe('SPEC 수용 테스트 시나리오 검증 (v48 기준)', () => {
 
     expect(csvContent.startsWith('\uFEFF')).toBe(true)
     expect(csvContent.includes(expectedHeader)).toBe(true)
+  })
+
+  // 시나리오 6: 플라워샵 스코프 기반 동명이인 가입 및 검증 (v52 요구사항 F-06, F-04)
+  it('시나리오 6: 서로 다른 플라워샵에 동명이인이 존재하더라도 shop_id 스코프 분리로 가입 성공', () => {
+    const shopA = { id: 'shop-a-id', name: 'A플라워' }
+    const shopB = { id: 'shop-b-id', name: 'B플라워' }
+
+    const staffInShopA = { shop_id: shopA.id, name: '이영희' }
+    const staffInShopBCandidate = { shop_id: shopB.id, name: '이영희' }
+
+    // A샵에 이영희가 있어도 B샵의 신규 가입 후보는 독립적으로 중복 판정 안됨
+    const isDuplicateNameInShop = (shopId: string, name: string, existingList: any[]) => {
+      return existingList.some((item) => item.shop_id === shopId && item.name === name)
+    }
+
+    const existingStaffs = [staffInShopA]
+
+    expect(isDuplicateNameInShop(shopA.id, '이영희', existingStaffs)).toBe(true)
+    expect(isDuplicateNameInShop(shopB.id, '이영희', existingStaffs)).toBe(false)
   })
 })

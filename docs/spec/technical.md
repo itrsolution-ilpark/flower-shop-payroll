@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v51 · 완성도 100% · 마지막 수정 2026. 10. 30. 15시 27분 19초
+> 문서 버전 v53 · 완성도 100% · 마지막 수정 2026. 10. 30. 16시 12분 32초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -138,7 +138,8 @@ flower-shop-payroll/
 │   │   │   ├── setup/page.tsx            // 최초 시스템 관리자 등록 (/system/setup)
 │   │   │   └── dashboard/page.tsx        // 시스템 관리자 대시보드 (/system/dashboard)
 │   │   ├── shop-admin/
-│   │   │   └── dashboard/page.tsx        // 플라워샵 관리자 대시보드 (/shop-admin/dashboard)
+│   │   │   ├── dashboard/page.tsx        // 플라워샵 관리자 대시보드 (/shop-admin/dashboard)
+│   │   │   └── admins/page.tsx           // 추가 관리자 전용 관리 페이지 (/shop-admin/admins)
 │   │   └── employee/
 │   │       └── dashboard/page.tsx        // 직원 대시보드 (/employee/dashboard)
 │   ├── actions/
@@ -185,6 +186,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v53 | 2026. 10. 30. 16시 8분 49초 | 최종 감수: Neon PostgreSQL 및 Next.js Server Actions 기반의 명세서 전체 섹션 일관성 검수 완료 및 최종 개발 준비 상태 전환 |
+| v52 | 2026. 10. 30. 15시 54분 24초 | 플라워샵별 회원가입/로그인 중복 이름 체크 명확화, 모바일(갤럭시 S25/아이폰 16) 반응형 UI 최적화, 플라워샵 관리자의 추가 관리자 등록 탭을 하단 링크 및 별도 화면으로 분리 |
 | v51 | 2026. 10. 30. 15시 23분 38초 | Neon PostgreSQL DB 스키마 생성 및 연동 명세를 최종 검증하여 개발 준비를 완료하였습니다. |
 | v50 | 2026. 10. 30. 15시 4분 33초 | 최종 감수: Neon PostgreSQL 및 Next.js App Router 기반 사양 감수 완료: 데이터 모델, 화면 구성, 수용 기준 및 테스트 시나리오 완결 |
 | v49 | 2026. 10. 30. 15시 4분 16초 | Neon PostgreSQL DB 스키마 초기화 DDL 및 테이블 자동/수동 생성 가이드를 명확히 재정비했습니다. |
