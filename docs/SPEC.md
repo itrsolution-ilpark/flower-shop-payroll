@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 개발 문서
 
-> 문서 버전 v42 · 완성도 100% · 마지막 수정 2026. 10. 30. 13시 15분 46초
+> 문서 버전 v44 · 완성도 100% · 마지막 수정 2026. 10. 30. 13시 50분 34초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -219,34 +219,34 @@ CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempte
 
 ## 7. 기술 스택과 폴더 구조
 
-### 기술 스택 및 구조
+### 기술 스택 및 데이터베이스 연결 사양
 - **Framework**: Next.js 14+ (App Router, Server Actions)
-- **Database**: Neon PostgreSQL (`pg` 모듈 싱글톤 커넥션 풀 풀링 연결)
+- **Database**: Neon PostgreSQL (`pg` 모듈 싱글톤 Pool 커넥션 방식을 사용하여 서버 환경에서 안전하게 연동)
 - **Styling**: Tailwind CSS
 - **Icons**: `lucide-react`
 - **Utils**: `date-fns` (한국 시간대 및 월별 날짜 연산), `bcryptjs` (비밀번호 단방향 솔트 해싱)
 
-### 서버 환경 변수 명세
-- `DATABASE_URL`: Neon PostgreSQL 연결 주소 (`postgres://...` 형태, 반드시 서버 컴포넌트/Server Actions에서만 접근하며 브라우저 번들에 절대 포함하지 않음)
-- `APP_SESSION_SECRET`: 서명 쿠키 생성용 32자 이상 보안 무작위 키
+### 필수 환경 변수 (Vercel 설정)
+- `DATABASE_URL`: Neon PostgreSQL 전용 연결 문자열 (`postgres://...` 형태, Server Actions 및 서버 컴포넌트 전용)
+- `APP_SESSION_SECRET`: 서명된 HttpOnly 세션 쿠키 암호화용 32자 이상 보안 무작위 키
 
-### 디렉터리 구성
+### 디렉터리 구조
 ```text
 flower-shop-payroll/
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx                    // 루트 레이아웃 (공통 폰트 및 글로벌 메타데이터)
+│   │   ├── layout.tsx                    // 루트 레이아웃 (공통 배너 및 메타데이터)
 │   │   ├── page.tsx                      // 메인 화면 (/)
 │   │   ├── login/page.tsx                // 통합 로그인 (/login)
 │   │   ├── signup/page.tsx               // 가입 신청 (/signup)
 │   │   ├── system/
-│   │   │   ├── login/page.tsx            // 시스템 관리자 전용 로그인
-│   │   │   ├── setup/page.tsx            // 시스템 관리자 최초 등록
-│   │   │   └── dashboard/page.tsx        // 시스템 관리자 대시보드
+│   │   │   ├── login/page.tsx            // 시스템 관리자 전용 로그인 (/system/login)
+│   │   │   ├── setup/page.tsx            // 최초 시스템 관리자 등록 (/system/setup)
+│   │   │   └── dashboard/page.tsx        // 시스템 관리자 대시보드 (/system/dashboard)
 │   │   ├── shop-admin/
-│   │   │   └── dashboard/page.tsx        // 플라워샵 관리자 대시보드
+│   │   │   └── dashboard/page.tsx        // 플라워샵 관리자 대시보드 (/shop-admin/dashboard)
 │   │   └── employee/
-│   │       └── dashboard/page.tsx        // 직원 대시보드
+│   │       └── dashboard/page.tsx        // 직원 대시보드 (/employee/dashboard)
 │   ├── actions/
 │   │   ├── systemActions.ts              // 시스템 관리자 등록, 플라워샵 생성/토글
 │   │   ├── shopAdminActions.ts           // 플라워샵 관리자 등록, 승인/퇴사, 급여조건 변경
@@ -255,9 +255,9 @@ flower-shop-payroll/
 │   │   └── exportActions.ts              // 급여 정산 CSV 데이터 생성
 │   ├── components/
 │   │   ├── Banner.tsx                    // 상단 고정 헤더 배너
-│   │   ├── PinInput.tsx                  // 4자리/6자리 숫자 입력 및 검증 컴포넌트
+│   │   ├── PinInput.tsx                  // 4자리/6자리 숫자 비밀번호 입력 필드
 │   │   ├── StatusBadge.tsx               // pending/approved/resigned/active 뱃지
-│   │   ├── TimePicker.tsx                // 세련된 출퇴근 시간 선택 드롭다운/인풋
+│   │   ├── TimePicker.tsx                // 출퇴근 시간 선택 컴포넌트
 │   │   └── MonthPicker.tsx               // 정산 대상 연월(YYYY-MM) 선택기
 │   └── lib/
 │       ├── db.ts                         // Neon PostgreSQL Pool 싱글톤 인스턴스
@@ -343,12 +343,14 @@ flower-shop-payroll/
 
 ## 12. 아직 정해지지 않은 사항
 
-미결 항목이 없습니다. 모든 권한 분리, 테이블 스키마, 비밀번호 자릿수, 급여 계산 방식, 화면 및 라우팅 명세가 확정되어 즉시 개발을 시작할 수 있습니다.
+모든 기능 요구사항, UI/UX 명세, DB 테이블 구조, 비밀번호 검증 조건, 테스트 시나리오가 구체화되었습니다. 즉시 구현 단계로 진입 가능합니다.
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v44 | 2026. 10. 30. 13시 48분 7초 | 최종 감수: Neon PostgreSQL 기반 Next.js 시스템 개발 사양에 맞춰 기능, 화면, 데이터베이스 스키마 및 테스트 시나리오의 상호 정합성을 검수 완료했습니다. |
+| v43 | 2026. 10. 30. 13시 47분 42초 | Neon PostgreSQL 기반의 최신 데이터 모델과 Next.js 서버 환경 구성을 명확히 반영하여 전체 기획 문서를 최종 재구성하였습니다. |
 | v42 | 2026. 10. 30. 12시 0분 23초 | 최종 감수: 최종 감수 완료: 3단계 권한(시스템 관리자·플라워샵 관리자·직원) 체계, 비밀번호 규칙(6자리/4자리), Neon DB DDL 및 무결성 제약조건, 급여 계산 알고리즘, 테스트 시나리오를 최종 검증하고 개발 준비를 완료했습니다. |
 | v41 | 2026. 10. 30. 11시 53분 16초 | 새로운 권한 모델(복수 시스템 관리자 6자리 비밀, 복수 플라워샵 관리자 6자리 비밀, 직원 4자리 비밀, 플라워샵 활성/비활성, 승인대기/승인/퇴사 상태, 급여 내역 다운로드 등)과 화면 흐름을 완벽히 반영한 전체 문서 개정 |
 | v40 | 2026. 10. 30. 9시 50분 8초 | 최종 감수: 최종 감수 완료: Neon DB 기반 전체 기능·화면·테스트·배포 아키텍처 정합성 검증 및 개발 착수 문서 확정 |

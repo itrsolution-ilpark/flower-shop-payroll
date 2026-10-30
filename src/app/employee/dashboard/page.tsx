@@ -5,17 +5,18 @@ import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import SecretField from "@/components/SecretField";
 import { Calendar, Save, LogOut, Key } from "lucide-react";
-import { format, getDaysInMonth } from "date-fns";
+import { format } from "date-fns";
 import { getShopsAction } from "@/actions/shopActions";
 import { getStaffCompensationsAction, changeStaffPinAction } from "@/actions/staffActions";
 import { getStaffAttendanceMonthAction, saveAttendanceAction, AttendanceItem } from "@/actions/attendanceActions";
+import { getCurrentSessionAction } from "@/actions/authActions";
 import { calculateStaffMonthlyEarnings, CompensationData } from "@/lib/payroll";
 
 interface StaffUser {
   id: string;
   shop_id: string;
   name: string;
-  is_admin: boolean;
+  is_admin?: boolean;
 }
 
 export default function EmployeeDashboardPage() {
@@ -43,22 +44,32 @@ export default function EmployeeDashboardPage() {
   const [pinSuccess, setPinSuccess] = useState<string>("");
 
   useEffect(() => {
-    const raw = typeof window !== "undefined" ? localStorage.getItem("flower_shop_user") : null;
-    if (!raw) {
-      router.push("/");
-      return;
-    }
-    try {
-      const parsed: StaffUser = JSON.parse(raw);
-      if (parsed.is_admin) {
-        router.push("/admin");
+    async function initUser() {
+      // 1. 서버 세션 체크
+      const session = await getCurrentSessionAction();
+      if (session && session.role === "staff" && session.shopId) {
+        const u = { id: session.userId, shop_id: session.shopId, name: session.name };
+        setUser(u);
+        fetchData(u.shop_id, u.id);
         return;
       }
-      setUser(parsed);
-      fetchData(parsed.shop_id, parsed.id);
-    } catch {
-      router.push("/");
+
+      // 2. LocalStorage fallback
+      const raw = typeof window !== "undefined" ? localStorage.getItem("flower_shop_user") : null;
+      if (!raw) {
+        router.push("/");
+        return;
+      }
+      try {
+        const parsed: StaffUser = JSON.parse(raw);
+        setUser(parsed);
+        fetchData(parsed.shop_id, parsed.id);
+      } catch {
+        router.push("/");
+      }
     }
+
+    initUser();
   }, [router]);
 
   useEffect(() => {
@@ -166,7 +177,6 @@ export default function EmployeeDashboardPage() {
     }
   };
 
-  // 급여 계산
   const latestComp = compensations[compensations.length - 1];
   const isMonthly = latestComp?.pay_type === "monthly";
 
