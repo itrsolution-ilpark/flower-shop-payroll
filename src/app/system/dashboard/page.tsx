@@ -177,11 +177,11 @@ export default function SystemDashboardPage() {
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <Shield className="w-3.5 h-3.5 text-emerald-400" />
-              최고 총괄 관리자 모드
+              시스템 관리자
             </div>
             <h2 className="text-xl font-extrabold tracking-tight">시스템 전체 관리 대시보드</h2>
             <p className="text-xs text-slate-300">
-              플라워샵 개설, 상태 제어(`active`/`inactive`), 추가 시스템 관리자를 총괄 운영합니다.
+              플라워샵 개설, 상태 제어, 추가 시스템 관리자를 총괄 운영합니다.
             </p>
           </div>
 
@@ -207,7 +207,7 @@ export default function SystemDashboardPage() {
             }`}
           >
             <Store className="w-4 h-4" />
-            플라워샵 개설/상태 관리 ({shops.length})
+            플라워샵 관리 ({shops.length})
           </button>
           <button
             onClick={() => setActiveTab("admins")}
@@ -218,7 +218,7 @@ export default function SystemDashboardPage() {
             }`}
           >
             <UserPlus className="w-4 h-4" />
-            시스템 관리자 목록 ({admins.length})
+            시스템 관리자 ({admins.length})
           </button>
         </div>
 
@@ -244,18 +244,18 @@ export default function SystemDashboardPage() {
 
             {/* 목록 테이블 (모바일 대응 수평 스크롤) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">전체 플라워샵 등록 현황</h3>
+              <h3 className="text-sm font-bold text-slate-900"> 플라워샵 현황</h3>
 
               <div className="w-full overflow-x-auto whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
                 <table className="w-full text-xs text-left border-collapse min-w-[640px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                       <th className="py-2.5 px-3">플라워샵명</th>
-                      <th className="py-2.5 px-3">운영 상태</th>
-                      <th className="py-2.5 px-3">소속 관리자</th>
-                      <th className="py-2.5 px-3">재직 직원 / 전체</th>
+                      <th className="py-2.5 px-3">상태</th>
+                      <th className="py-2.5 px-3">관리자</th>
+                      <th className="py-2.5 px-3">직원 / 전체</th>
                       <th className="py-2.5 px-3">개설일</th>
-                      <th className="py-2.5 px-3 text-center">상태 토글 및 수정</th>
+                      <th className="py-2.5 px-3 text-center">상태변경</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -338,7 +338,7 @@ export default function SystemDashboardPage() {
         {activeTab === "admins" && (
           <div className="space-y-6">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-md">
-              <h3 className="text-sm font-bold text-slate-900">추가 시스템 관리자 등록</h3>
+              <h3 className="text-sm font-bold text-slate-900">시스템 관리자 등록</h3>
               <form onSubmit={handleAddSystemAdmin} className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-800 mb-1">
@@ -367,7 +367,7 @@ export default function SystemDashboardPage() {
                 )}
 
                 <Button type="submit" variant="secondary" disabled={addingAdmin}>
-                  {addingAdmin ? "등록 중..." : "추가 시스템 관리자 생성"}
+                  {addingAdmin ? "등록 중..." : "시스템 관리자 등록"}
                 </Button>
               </form>
             </div>

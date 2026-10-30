@@ -29,13 +29,12 @@ export default function MainPage() {
           <div className="absolute top-0 right-0 -mr-6 -mt-6 w-28 h-28 bg-emerald-500/20 rounded-full blur-xl pointer-events-none" />
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100/20 backdrop-blur-sm rounded-full text-xs font-semibold text-amber-200 border border-amber-200/30">
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            Hand-crafted 펠트 아트 근태 & 급여 관리
-          </div>
-
-          <div className="space-y-2">
             <h2 className="text-xl md:text-2xl font-bold tracking-tight text-amber-50 leading-snug">
               따뜻하고 정교한 플라워샵 근무 관리
             </h2>
+          </div>
+
+          <div className="space-y-2">
             <p className="text-xs md:text-sm text-emerald-100 leading-relaxed">
               대표와 직원이 함께 이용하는 출퇴근 기록 및 정산 솔루션입니다.
               시급(분/시간 정산) 및 월급 맞춤 정산을 안전하게 관리하세요.
@@ -139,8 +138,14 @@ export default function MainPage() {
           </div>
         </section>
 
-        {/* 하단 영역: 시스템 관리자 접속 고가시성 버튼/링크 */}
-        <div className="mt-8">
+        {/* 하단: 눈에 띄는 시스템 관리자 전용 링크 ('시스템 관리자 접속') */}
+        <section className="bg-slate-900 text-white rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          <div className="space-y-1 text-center sm:text-left">
+            <h4 className="text-sm font-bold text-slate-100">프로그램 총괄 관리가 필요하신가요?</h4>
+            <p className="text-xs text-slate-400">
+              시스템 관리자(6자리)는 플라워샵 개설 및 운영 상태를 전체적으로 관리할 수 있습니다.
+            </p>
+          </div>
           <Link
             href="/system/login"
             className="mt-8 p-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
