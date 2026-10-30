@@ -1,27 +1,44 @@
-import crypto from "crypto";
+import bcrypt from "bcryptjs";
+
+const SALT_ROUNDS = 10;
 
 /**
- * 4자리 숫자 비밀 단방향 해시 생성 (SHA-256 기반 솔트 결합)
+ * 비밀번호 bcrypt 단방향 솔트 해싱
  */
 export function hashPin(pin: string): string {
-  const salt = process.env.APP_SESSION_SECRET || "flower-shop-default-salt-2026";
-  return crypto.createHmac("sha256", salt).update(pin.trim()).digest("hex");
+  return bcrypt.hashSync(pin.trim(), SALT_ROUNDS);
 }
 
 /**
- * 4자리 숫자 비밀 유효성 및 해시 일치 검증
+ * 비밀번호 bcrypt 검증
  */
 export function verifyPin(rawPin: string, storedHash: string): boolean {
-  if (!/^[0-9]{4}$/.test(rawPin)) {
+  if (!rawPin || !storedHash) return false;
+  try {
+    return bcrypt.compareSync(rawPin.trim(), storedHash);
+  } catch {
     return false;
   }
-  const computed = hashPin(rawPin);
-  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(storedHash));
 }
 
 /**
- * 4자리 숫자 포맷 정규식 검증
+ * 관리자 비밀번호 자릿수 검증: 숫자 6자리
  */
-export function isValidPinFormat(pin: string): boolean {
+export function isValidAdminPinFormat(pin: string): boolean {
+  return /^[0-9]{6}$/.test(pin.trim());
+}
+
+/**
+ * 직원 비밀번호 자릿수 검증: 숫자 4자리
+ */
+export function isValidStaffPinFormat(pin: string): boolean {
   return /^[0-9]{4}$/.test(pin.trim());
+}
+
+/**
+ * 호환성용 기본 함수
+ */
+export function isValidPinFormat(pin: string, digits: 4 | 6 = 4): boolean {
+  if (digits === 6) return isValidAdminPinFormat(pin);
+  return isValidStaffPinFormat(pin);
 }

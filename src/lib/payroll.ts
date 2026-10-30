@@ -1,118 +1,164 @@
-import { getDaysInMonth } from "date-fns";
+import { getDaysInMonth, parseISO } from "date-fns";
 
-export interface CompensationItem {
+export interface CompensationData {
   id?: string;
   staff_id?: string;
   pay_type: "hourly" | "monthly";
+  time_unit?: "minute" | "hour";
   amount_krw: number;
   effective_from: string;
   created_at?: string;
 }
 
-export interface AttendanceRecord {
+export interface AttendanceItem {
   id?: string;
   staff_id?: string;
   work_date: string;
-  clock_in?: string;
-  clock_out?: string;
+  clock_in: string;
+  clock_out: string;
   total_minutes: number;
   created_at?: string;
   updated_at?: string;
 }
 
-/**
- * 특정 날짜에 유효한 가장 최근 급여 조건 조회
- */
-export function getEffectiveCompensationForDate(
-  compensations: CompensationItem[],
-  dateStr: string
-): CompensationItem | null {
-  if (!compensations || compensations.length === 0) return null;
-  const sorted = [...compensations].sort((a, b) =>
-    a.effective_from.localeCompare(b.effective_from)
-  );
-
-  let effective: CompensationItem | null = null;
-  for (const c of sorted) {
-    if (c.effective_from <= dateStr) {
-      effective = c;
-    }
-  }
-  return effective;
-}
-
-/**
- * SPEC F-09, F-10: 월별 근무 및 급여 정산 계산
- * - 시급: 각 근무 기록별 근무 분 기준으로 일자별 유효 시급을 적용하여 계산 후 원 단위 반올림
- * - 월급: 달력 일수 기준으로 일할 계산 후 원 단위 반올림
- */
-export function calculateStaffMonthlyEarnings(
-  compensations: CompensationItem[],
-  attendanceList: AttendanceRecord[],
-  targetMonth: string
-): {
-  error: string | null;
+export interface MonthlyEarningsResult {
   amount: number;
   totalMinutes: number;
   payType: "hourly" | "monthly" | null;
-} {
-  if (!compensations || compensations.length === 0) {
-    return {
-      error: "급여 적용 조건이 없어 계산할 수 없습니다.",
-      amount: 0,
-      totalMinutes: 0,
-      payType: null,
-    };
-  }
-
-  const sortedComp = [...compensations].sort((a, b) =>
-    a.effective_from.localeCompare(b.effective_from)
-  );
-  const latestComp = sortedComp[sortedComp.length - 1];
-
-  if (latestComp.pay_type === "hourly") {
-    let totalMins = 0;
-    let totalPay = 0;
-
-    for (const att of attendanceList) {
-      const comp = getEffectiveCompensationForDate(sortedComp, att.work_date);
-      if (comp && comp.pay_type === "hourly") {
-        const mins = att.total_minutes || 0;
-        totalMins += mins;
-        totalPay += (mins / 60) * comp.amount_krw;
-      }
-    }
-
-    return {
-      error: null,
-      amount: Math.round(totalPay),
-      totalMinutes: totalMins,
-      payType: "hourly",
-    };
-  } else {
-    // 월급 직원 달력 일수 기준 일할 계산
-    const [year, month] = targetMonth.split("-").map(Number);
-    const totalDaysInMonth = getDaysInMonth(new Date(year, month - 1));
-    let weightedMonthlyPay = 0;
-
-    for (let day = 1; day <= totalDaysInMonth; day++) {
-      const dateStr = `${targetMonth}-${String(day).padStart(2, "0")}`;
-      const comp = getEffectiveCompensationForDate(sortedComp, dateStr);
-      if (comp && comp.pay_type === "monthly") {
-        weightedMonthlyPay += comp.amount_krw / totalDaysInMonth;
-      }
-    }
-
-    return {
-      error: null,
-      amount: Math.round(weightedMonthlyPay),
-      totalMinutes: 0,
-      payType: "monthly",
-    };
-  }
+  timeUnit: "minute" | "hour";
+  error?: string;
 }
 
 /**
- * 수용 테스트 및 모듈 호환성을 위한 별칭 export
+ * 출퇴근 문자열(HH:mm) 사이의 총 근무 분을 계산합니다.
  */
+export function calculateMinutesBetween(clockIn: string, clockOut: string): number {
+  if (!clockIn || !clockOut) return 0;
+  const [inH, inM] = clockIn.split(":").map(Number);
+  const [outH, outM] = clockOut.split(":").map(Number);
+  if (isNaN(inH) || isNaN(inM) || isNaN(outH) || isNaN(outM)) return 0;
+  const inMinutes = inH * 60 + inM;
+  const outMinutes = outH * 60 + outM;
+  return Math.max(0, outMinutes - inMinutes);
+}
+
+/**
+ * 시급 정산: minute(분 단위 정밀 정산: 반올림) 또는 hour(시간 단위 정산: 버림)
+ */
+export function calculateHourlyWage(
+  totalMinutes: number,
+  hourlyRate: number,
+  timeUnit: "minute" | "hour" = "minute"
+): number {
+  if (totalMinutes <= 0 || hourlyRate <= 0) return 0;
+  if (timeUnit === "hour") {
+    const hours = Math.floor(totalMinutes / 60);
+    return hours * hourlyRate;
+  }
+  // minute 단위 정밀 정산 (원 단위 반올림)
+  return Math.round((totalMinutes / 60) * hourlyRate);
+}
+
+/**
+ * 월급 정산: 월 중간 적용 시 해당 월 전체 일수 대비 유효 일수로 일할 계산
+ */
+export function calculateMonthlyWage(
+  monthlyRate: number,
+  effectiveFrom: string,
+  targetMonth: string
+): number {
+  if (monthlyRate <= 0) return 0;
+  const [yearStr, monthStr] = targetMonth.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  if (isNaN(year) || isNaN(month)) return monthlyRate;
+
+  const totalDays = getDaysInMonth(new Date(year, month - 1));
+  const monthStartStr = `${targetMonth}-01`;
+  const monthEndStr = `${targetMonth}-${String(totalDays).padStart(2, "0")}`;
+
+  if (effectiveFrom <= monthStartStr) {
+    return monthlyRate;
+  }
+  if (effectiveFrom > monthEndStr) {
+    return 0;
+  }
+
+  // 월 중간 시작: effectiveFrom부터 월말까지 유효 일수 계산
+  const effectiveDay = parseInt(effectiveFrom.split("-")[2], 10);
+  const activeDays = Math.max(0, totalDays - effectiveDay + 1);
+  return Math.round((monthlyRate / totalDays) * activeDays);
+}
+
+/**
+ * 직원의 특정 월 총 급여 및 근무시간을 산출합니다.
+ */
+export function calculateStaffMonthlyEarnings(
+  compensations: CompensationData[] = [],
+  attendances: AttendanceItem[] = [],
+  targetMonth: string
+): MonthlyEarningsResult {
+  if (!compensations || compensations.length === 0) {
+    return {
+      amount: 0,
+      totalMinutes: 0,
+      payType: null,
+      timeUnit: "minute",
+      error: "급여 적용 조건이 없어 계산할 수 없습니다.",
+    };
+  }
+
+  // targetMonth에 유효한 가장 최신 급여 조건 찾기
+  const [yearStr, monthStr] = targetMonth.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const totalDays = getDaysInMonth(new Date(year, month - 1));
+  const monthEndStr = `${targetMonth}-${String(totalDays).padStart(2, "0")}`;
+
+  const eligibleComps = [...compensations]
+    .filter((c) => c.effective_from <= monthEndStr)
+    .sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+
+  if (eligibleComps.length === 0) {
+    return {
+      amount: 0,
+      totalMinutes: 0,
+      payType: null,
+      timeUnit: "minute",
+      error: "급여 적용 조건이 없어 계산할 수 없습니다.",
+    };
+  }
+
+  const latestComp = eligibleComps[0];
+  const timeUnit = latestComp.time_unit || "minute";
+
+  if (latestComp.pay_type === "monthly") {
+    const amount = calculateMonthlyWage(
+      latestComp.amount_krw,
+      latestComp.effective_from,
+      targetMonth
+    );
+    return {
+      amount,
+      totalMinutes: 0,
+      payType: "monthly",
+      timeUnit,
+    };
+  }
+
+  // 시급 직원의 경우 해당 월의 출퇴근 기록 집계
+  const monthAttendances = attendances.filter((att) =>
+    att.work_date.startsWith(targetMonth)
+  );
+  const totalMinutes = monthAttendances.reduce((acc, cur) => acc + (cur.total_minutes || 0), 0);
+  const amount = calculateHourlyWage(totalMinutes, latestComp.amount_krw, timeUnit);
+
+  return {
+    amount,
+    totalMinutes,
+    payType: "hourly",
+    timeUnit,
+  };
+}
+
 export const calculateMonthlySettlement = calculateStaffMonthlyEarnings;

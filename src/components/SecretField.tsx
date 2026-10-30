@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 
 interface SecretFieldProps {
@@ -7,20 +9,22 @@ interface SecretFieldProps {
   placeholder?: string;
   id?: string;
   name?: string;
+  digits?: 4 | 6;
   autoFocus?: boolean;
 }
 
 export default function SecretField({
-  label = "비밀",
+  label = "비밀번호",
   value,
   onChange,
-  placeholder = "••••",
+  placeholder,
   id,
   name,
+  digits = 4,
   autoFocus,
 }: SecretFieldProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const numeric = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+    const numeric = e.target.value.replace(/[^0-9]/g, "").slice(0, digits);
     onChange(numeric);
   };
 
@@ -36,11 +40,11 @@ export default function SecretField({
         name={name}
         type="password"
         inputMode="numeric"
-        pattern="[0-9]{4}"
-        maxLength={4}
+        pattern={`[0-9]{${digits}}`}
+        maxLength={digits}
         value={value}
         onChange={handleChange}
-        placeholder={placeholder}
+        placeholder={placeholder || "•".repeat(digits)}
         autoFocus={autoFocus}
         className="w-full min-h-[46px] h-[46px] px-3.5 border border-[#E2E8F0] rounded-xl text-center tracking-widest text-lg font-bold bg-white focus:outline-none focus:ring-2 focus:ring-[#059669] text-[#0F172A]"
       />

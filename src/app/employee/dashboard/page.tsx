@@ -7,9 +7,9 @@ import SecretField from "@/components/SecretField";
 import { Calendar, Save, LogOut, Key } from "lucide-react";
 import { format, getDaysInMonth } from "date-fns";
 import { getShopsAction } from "@/actions/shopActions";
-import { getStaffCompensationsAction, changeStaffPinAction, CompensationData } from "@/actions/staffActions";
+import { getStaffCompensationsAction, changeStaffPinAction } from "@/actions/staffActions";
 import { getStaffAttendanceMonthAction, saveAttendanceAction, AttendanceItem } from "@/actions/attendanceActions";
-import { calculateStaffMonthlyEarnings } from "@/lib/payroll";
+import { calculateStaffMonthlyEarnings, CompensationData } from "@/lib/payroll";
 
 interface StaffUser {
   id: string;

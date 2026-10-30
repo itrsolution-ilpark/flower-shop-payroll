@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v40 · 완성도 100% · 마지막 수정 2026. 10. 30. 11시 42분 32초
+> 문서 버전 v42 · 완성도 100% · 마지막 수정 2026. 10. 30. 13시 15분 46초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -16,10 +16,9 @@
 ## 1. 데이터 모델
 
 ### 데이터베이스 스키마 (Neon PostgreSQL 전체 실행 DDL)
-모든 4자리 비밀은 단방향 해시(bcrypt 또는 crypto sha256)로 암호화되어 `pin_hash`에 저장되며 화면이나 클라이언트에 절대 노출되지 않습니다. Neon 콘솔의 SQL Editor에서 아래 스크립트를 한 번에 실행합니다.
 
 ```sql
--- 1. 기존 테이블 정리 (외래키 종속성 순서대로 삭제)
+-- 1. 기존 테이블 정리
 DROP TABLE IF EXISTS auth_attempts CASCADE;
 DROP TABLE IF EXISTS attendance CASCADE;
 DROP TABLE IF EXISTS compensation CASCADE;
@@ -28,55 +27,58 @@ DROP TABLE IF EXISTS shop_admins CASCADE;
 DROP TABLE IF EXISTS shops CASCADE;
 DROP TABLE IF EXISTS system_admins CASCADE;
 
--- 2. 시스템 관리자 테이블
+-- 2. 시스템 관리자 테이블 (복수 등록 지원, 6자리 비밀)
 CREATE TABLE system_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
   pin_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. 플라워샵 테이블
+-- 3. 플라워샵 테이블 (상태: active, inactive)
 CREATE TABLE shops (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. 플라워샵별 관리자 테이블 (플라워샵당 단 1명)
+-- 4. 플라워샵 관리자 테이블 (플라워샵별 복수 등록 지원, 6자리 비밀)
 CREATE TABLE shop_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id UUID NOT NULL UNIQUE REFERENCES shops(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   pin_hash TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (shop_id, name)
 );
 
--- 5. 플라워샵 직원 테이블 (대표 관리자는 여기에 포함되지 않음)
+-- 5. 플라워샵 직원 테이블 (상태: pending, approved, resigned, 4자리 비밀)
 CREATE TABLE staff (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   pin_hash TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'active', 'resigned')),
+    CHECK (status IN ('pending', 'approved', 'resigned')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   resigned_at TIMESTAMPTZ,
   UNIQUE (shop_id, name)
 );
 
--- 6. 급여 조건 테이블 (시급 또는 월급)
+-- 6. 직원 급여 조건 테이블 (시급/월급, 시간/분 단위 정산)
 CREATE TABLE compensation (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
   pay_type TEXT NOT NULL CHECK (pay_type IN ('hourly', 'monthly')),
+  time_unit TEXT NOT NULL DEFAULT 'minute' CHECK (time_unit IN ('minute', 'hour')),
   amount_krw INTEGER NOT NULL CHECK (amount_krw > 0),
   effective_from DATE NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (staff_id, effective_from)
 );
 
--- 7. 출퇴근 근무 기록 테이블 (시급 직원 전용)
+-- 7. 출퇴근 근무 기록 테이블 (시급 직원용 일별 기록)
 CREATE TABLE attendance (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
@@ -90,7 +92,7 @@ CREATE TABLE attendance (
   CHECK (clock_out > clock_in)
 );
 
--- 8. 로그인 실패 차단 기록 테이블
+-- 8. 로그인 시도 차단 테이블 (브루트포스 방지)
 CREATE TABLE auth_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_hash TEXT NOT NULL,
@@ -98,86 +100,91 @@ CREATE TABLE auth_attempts (
   succeeded BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- 9. 인덱스 생성
-CREATE INDEX idx_staff_shop_id ON staff(shop_id);
-CREATE INDEX idx_attendance_staff_id_date ON attendance(staff_id, work_date);
-CREATE INDEX idx_compensation_staff_id ON compensation(staff_id, effective_from DESC);
+-- 9. 성능 최적화 인덱스
+CREATE INDEX idx_shops_status ON shops(status);
+CREATE INDEX idx_shop_admins_shop_id ON shop_admins(shop_id);
+CREATE INDEX idx_staff_shop_status ON staff(shop_id, status);
+CREATE INDEX idx_compensation_staff ON compensation(staff_id, effective_from DESC);
+CREATE INDEX idx_attendance_staff_date ON attendance(staff_id, work_date);
 CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempted_at DESC);
 ```
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 스택 및 환경
+### 기술 스택 및 구조
 - **Framework**: Next.js 14+ (App Router, Server Actions)
-- **Language**: TypeScript
+- **Database**: Neon PostgreSQL (`pg` 모듈 싱글톤 커넥션 풀 풀링 연결)
 - **Styling**: Tailwind CSS
-- **Database**: Neon PostgreSQL (`pg` 또는 `@neondatabase/serverless` POOL 모드)
-- **Date Library**: `date-fns`
 - **Icons**: `lucide-react`
+- **Utils**: `date-fns` (한국 시간대 및 월별 날짜 연산), `bcryptjs` (비밀번호 단방향 솔트 해싱)
 
-### 환경 변수 명세
-| 환경 변수명 | 필수 여부 | 브라우저 노출 | 설명 |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | **필수** | **금지 (서버 전용)** | Neon PostgreSQL 연결 스트링 (`postgres://...`) |
-| `APP_SESSION_SECRET` | **필수** | **금지 (서버 전용)** | 쿠키 세션 암호화 및 서명용 32자 이상 비밀키 |
+### 서버 환경 변수 명세
+- `DATABASE_URL`: Neon PostgreSQL 연결 주소 (`postgres://...` 형태, 반드시 서버 컴포넌트/Server Actions에서만 접근하며 브라우저 번들에 절대 포함하지 않음)
+- `APP_SESSION_SECRET`: 서명 쿠키 생성용 32자 이상 보안 무작위 키
 
-### 소스 트리 구조
+### 디렉터리 구성
 ```text
 flower-shop-payroll/
-├── package.json
-├── next.config.mjs
-├── tsconfig.json
-├── tailwind.config.ts
-├── .env.example
-├── schema.sql
-└── src/
-    ├── app/
-    │   ├── layout.tsx
-    │   ├── page.tsx
-    │   ├── system-setup/page.tsx
-    │   ├── shop/register/page.tsx
-    │   ├── shop/[id]/page.tsx
-    │   ├── signup/page.tsx
-    │   ├── admin/setup/page.tsx
-    │   ├── admin/page.tsx
-    │   ├── admin/attendance/page.tsx
-    │   └── employee/dashboard/page.tsx
-    ├── actions/
-    │   ├── systemAdminActions.ts  // 시스템 관리자 등록/인증
-    │   ├── shopActions.ts         // 플라워샵 목록, 등록, 수정
-    │   ├── shopAdminActions.ts    // 관리자 등록, 인증, 본인정보 수정
-    │   ├── staffActions.ts        // 직원 신청, 승인, 상태, 급여조건, 비밀변경
-    │   └── attendanceActions.ts   // 출퇴근 등록/수정, 월별 급여 집계
-    ├── components/
-    │   ├── ProgramBanner.tsx      // 공통 상단 배너
-    │   ├── SecretField.tsx        // 4자리 숫자 '비밀', '비밀 확인' 전용 컴포넌트
-    │   ├── MonthPicker.tsx        // 정산 월 선택 컴포넌트
-    │   ├── TimePicker.tsx         // 출퇴근 시간 선택 컴포넌트
-    │   └── StatusBadge.tsx        // 상태 표시 뱃지
-    └── lib/
-        ├── db.ts                  // Neon PostgreSQL pg.Pool 싱글톤 인스턴스
-        ├── session.ts             // 쿠키 기반 세션 암호화 유틸리티
-        ├── hash.ts                // 4자리 비밀 단방향 해시 생성 및 검증
-        └── payroll.ts             // 시급/월급 급여 정산 알고리즘 모듈
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx                    // 루트 레이아웃 (공통 폰트 및 글로벌 메타데이터)
+│   │   ├── page.tsx                      // 메인 화면 (/)
+│   │   ├── login/page.tsx                // 통합 로그인 (/login)
+│   │   ├── signup/page.tsx               // 가입 신청 (/signup)
+│   │   ├── system/
+│   │   │   ├── login/page.tsx            // 시스템 관리자 전용 로그인
+│   │   │   ├── setup/page.tsx            // 시스템 관리자 최초 등록
+│   │   │   └── dashboard/page.tsx        // 시스템 관리자 대시보드
+│   │   ├── shop-admin/
+│   │   │   └── dashboard/page.tsx        // 플라워샵 관리자 대시보드
+│   │   └── employee/
+│   │       └── dashboard/page.tsx        // 직원 대시보드
+│   ├── actions/
+│   │   ├── systemActions.ts              // 시스템 관리자 등록, 플라워샵 생성/토글
+│   │   ├── shopAdminActions.ts           // 플라워샵 관리자 등록, 승인/퇴사, 급여조건 변경
+│   │   ├── staffActions.ts               // 직원 가입 신청, 출퇴근 기록 등록/수정
+│   │   ├── authActions.ts                // 통합 로그인, 세션 검증, 로그아웃
+│   │   └── exportActions.ts              // 급여 정산 CSV 데이터 생성
+│   ├── components/
+│   │   ├── Banner.tsx                    // 상단 고정 헤더 배너
+│   │   ├── PinInput.tsx                  // 4자리/6자리 숫자 입력 및 검증 컴포넌트
+│   │   ├── StatusBadge.tsx               // pending/approved/resigned/active 뱃지
+│   │   ├── TimePicker.tsx                // 세련된 출퇴근 시간 선택 드롭다운/인풋
+│   │   └── MonthPicker.tsx               // 정산 대상 연월(YYYY-MM) 선택기
+│   └── lib/
+│       ├── db.ts                         // Neon PostgreSQL Pool 싱글톤 인스턴스
+│       ├── session.ts                    // HttpOnly 쿠키 기반 세션 유틸리티
+│       ├── hash.ts                       // bcrypt 비밀번호 해싱 및 비교 유틸리티
+│       └── payroll.ts                    // 분/시간 단위 시급 및 월할 계산 정산 엔진
+└── schema.sql                            // Neon DB 테이블 생성 및 인덱스 스크립트
 ```
 
 ## 3. 품질 기준 (성능·보안·접근성)
 
-### 보안·정확성·접근성 기준
-- 비밀은 정확히 숫자 4자리(`^[0-9]{4}$`)만 허용합니다. 확인 입력은 두 값이 정확히 일치해야 합니다. 원문 비밀은 DB, 로그, 오류 메시지, 응답에 남기지 않습니다.
-- 시스템 관리자·플라워샵 관리자·직원 권한을 서버에서 매 요청 확인합니다. 직원은 본인 `staff_id`에 한해서만 기록을 조회·수정하고, 관리자는 본인 `shop_id` 데이터만 관리합니다.
-- 플라워샵별 관리자 존재 확인과 등록은 현재 `shop_id`를 사용합니다. 관리자 한 명 제한은 DB의 고유 제약으로도 보장합니다.
-- 로그인 실패는 계정 식별자별 15분 동안 5회까지 허용하고, 이후 15분 동안 차단합니다. 실패 사유는 ‘이름 또는 비밀을 확인해 주세요.’로 동일하게 표시합니다.
-- 근무 기록은 직원·날짜당 하나입니다. 퇴근은 출근보다 늦어야 하고, 날짜를 넘기는 근무는 지원하지 않습니다. 근무 분은 출퇴근 시각 차이로 계산하며 휴게 시간을 빼지 않습니다.
-- 적용 급여 조건은 근무 날짜 또는 급여 적용 날짜에 유효한 가장 최근 조건입니다. 시급 급여는 기록별 근무 분 기준, 월급은 달력 일수 기준으로 일할 계산합니다. 최종 합계는 원 단위 반올림합니다.
-- 월급 직원은 근무 기록을 만들지 않습니다. 퇴사 직원의 과거 기록은 보존하지만 새 기록을 추가하지 못합니다.
-- 모든 입력 필드는 키보드로 조작할 수 있고, 입력 라벨과 오류 문구를 화면 읽기 도구가 읽을 수 있도록 연결합니다. 버튼은 최소 높이 46px, 본문 기본 글자 크기는 16px입니다.
-- 서버 오류가 발생하면 원문 SQL·키·스택 추적을 사용자에게 보여주지 않습니다. 저장 실패 시 입력 내용을 유지하고 재시도 안내를 표시합니다.
+### 계산 규칙 및 보안 무결성
+1. **비밀번호 규칙**
+   - 시스템 관리자 & 플라워샵 관리자: 반드시 **숫자 6자리** (`^[0-9]{6}$`)
+   - 플라워샵 직원: 반드시 **숫자 4자리** (`^[0-9]{4}$`)
+   - 모든 비밀번호는 단방향 bcrypt 해시 형태로만 DB에 저장되며 평문 저장 절대 금지
+2. **플라워샵 비활성화 시 보안 통제**
+   - `shops.status = 'inactive'`일 경우, 해당 플라워샵의 모든 관리자와 직원은 로그인 시도가 즉시 거부되며 기존 발급된 세션 쿠키도 요청 즉시 무효화됩니다.
+3. **급여 계산 알고리즘**
+   - **시급(`hourly`)**:
+     - `time_unit = 'minute'`: `(총 근무 분 / 60) * 시급`, 원 단위 반올림 (`Math.round`)
+     - `time_unit = 'hour'`: `Math.floor(총 근무 분 / 60) * 시급` (시간 단위 정산)
+   - **월급(`monthly`)**:
+     - 기본적으로 해당 월 고정액 지급. 월 중간 시작일 적용 시 해당 월 전체 일수 대비 유효 일수로 일할 계산
+4. **CSV 데이터 다운로드 형식**
+   - 파일명: `flower_payroll_[YYYY_MM].csv`
+   - UTF-8 with BOM 인코딩 (엑셀에서 한글 깨짐 방지)
+   - 헤더: `직원명,상태,급여형태,계산단위,적용금액(원),해당월 총 근무시간(분),지급예정액(원)`
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v42 | 2026. 10. 30. 12시 0분 23초 | 최종 감수: 최종 감수 완료: 3단계 권한(시스템 관리자·플라워샵 관리자·직원) 체계, 비밀번호 규칙(6자리/4자리), Neon DB DDL 및 무결성 제약조건, 급여 계산 알고리즘, 테스트 시나리오를 최종 검증하고 개발 준비를 완료했습니다. |
+| v41 | 2026. 10. 30. 11시 53분 16초 | 새로운 권한 모델(복수 시스템 관리자 6자리 비밀, 복수 플라워샵 관리자 6자리 비밀, 직원 4자리 비밀, 플라워샵 활성/비활성, 승인대기/승인/퇴사 상태, 급여 내역 다운로드 등)과 화면 흐름을 완벽히 반영한 전체 문서 개정 |
 | v40 | 2026. 10. 30. 9시 50분 8초 | 최종 감수: 최종 감수 완료: Neon DB 기반 전체 기능·화면·테스트·배포 아키텍처 정합성 검증 및 개발 착수 문서 확정 |
 | v39 | 2026. 10. 30. 9시 46분 22초 | 데이터베이스를 Neon PostgreSQL 아키텍처로 전환하고 스키마, 서버 연결 방식, 배포 및 환경 변수 명세를 최신화했습니다. |
 | v38 | 2026. 10. 29. 17시 55분 40초 | 최종 감수: 최종 감수 완료: 42501(RLS 정책 위반) 방지를 위한 Server Actions 아키텍처 및 Supabase SQL 스키마 최종 확정, 컴포넌트 및 환경변수 완비 |

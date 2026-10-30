@@ -1,29 +1,36 @@
 import React from "react";
 
-export type StaffStatus = "pending" | "active" | "resigned" | string;
+export type StaffOrShopStatus = "pending" | "approved" | "resigned" | "active" | "inactive" | string;
 
 interface StatusBadgeProps {
-  status: StaffStatus;
+  status: StaffOrShopStatus;
 }
 
 export default function StatusBadge({ status }: StatusBadgeProps) {
   switch (status) {
     case "pending":
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#FEF3C7] text-[#D97706]">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
           승인대기
         </span>
       );
+    case "approved":
     case "active":
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#ECFDF5] text-[#059669]">
-          재직
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+          {status === "active" ? "활성" : "승인(재직)"}
         </span>
       );
     case "resigned":
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#64748B]">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
           퇴사
+        </span>
+      );
+    case "inactive":
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+          비활성
         </span>
       );
     default:

@@ -2,7 +2,7 @@
 
 import { query } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import { ActionResult } from "./systemAdminActions";
+import { ActionResult } from "./systemActions";
 
 export interface ShopSummary {
   id: string;
