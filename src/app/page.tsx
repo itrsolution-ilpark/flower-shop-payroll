@@ -29,13 +29,12 @@ export default function MainPage() {
           <div className="absolute top-0 right-0 -mr-6 -mt-6 w-28 h-28 bg-emerald-500/20 rounded-full blur-xl pointer-events-none" />
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100/20 backdrop-blur-sm rounded-full text-xs font-semibold text-amber-200 border border-amber-200/30">
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            Hand-crafted 펠트 아트 근태 & 급여 관리
-          </div>
-
-          <div className="space-y-2">
             <h2 className="text-xl md:text-2xl font-bold tracking-tight text-amber-50 leading-snug">
               따뜻하고 정교한 플라워샵 근무 관리
             </h2>
+          </div>
+
+          <div className="space-y-2">
             <p className="text-xs md:text-sm text-emerald-100 leading-relaxed">
               대표와 직원이 함께 이용하는 출퇴근 기록 및 정산 솔루션입니다.
               시급(분/시간 정산) 및 월급 맞춤 정산을 안전하게 관리하세요.
