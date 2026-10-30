@@ -13,8 +13,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="bg-[#F8FAFC] text-[#0F172A] min-h-screen font-sans antialiased">
-        <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+      <body className="bg-amber-50/30 text-[#0F172A] min-h-screen font-sans antialiased">
+        <div className="min-h-screen flex flex-col bg-amber-50/30">
           {children}
         </div>
       </body>
