@@ -109,19 +109,10 @@ export default function MainPage() {
         {/* 3단계 권한 안내 카드 */}
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
-            <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-800">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <h4 className="font-bold text-sm text-slate-900">시스템 관리자 (숫자 6자리)</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              전체 프로그램 총괄 관리, 플라워샵 개설 및 활성/비활성 제어, 다중 시스템 관리자 등록을 수행합니다.
-            </p>
-          </div>
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
             <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700">
               <Users className="w-5 h-5" />
             </div>
-            <h4 className="font-bold text-sm text-slate-900">플라워샵 관리자/대표 (숫자 6자리)</h4>
+            <h4 className="font-bold text-sm text-slate-900">플라워샵 관리자</h4>
             <p className="text-xs text-slate-500 leading-relaxed">
               직원 가입 승인 및 퇴사 처리, 시급/월급 급여 조건 설정, 출퇴근 시간 보완, 월별 급여 CSV 다운로드를 관리합니다.
             </p>
@@ -130,9 +121,18 @@ export default function MainPage() {
             <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center text-teal-700">
               <Clock className="w-5 h-5" />
             </div>
-            <h4 className="font-bold text-sm text-slate-900">플라워샵 직원 (숫자 4자리)</h4>
+            <h4 className="font-bold text-sm text-slate-900">플라워샵 직원</h4>
             <p className="text-xs text-slate-500 leading-relaxed">
               소속 플라워샵 가입 신청, 일별 출근/퇴근 기록 등록 및 수정, 월별 급여 산정 결과를 실시간 확인합니다.
+            </p>
+          </div>
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+            <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-800">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <h4 className="font-bold text-sm text-slate-900">시스템 관리자</h4>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              전체 프로그램 총괄 관리, 플라워샵 개설 및 활성/비활성 제어, 다중 시스템 관리자 등록을 수행합니다.
             </p>
           </div>
         </section>
@@ -142,7 +142,7 @@ export default function MainPage() {
           <div className="space-y-1 text-center sm:text-left">
             <h4 className="text-sm font-bold text-slate-100">프로그램 총괄 관리가 필요하신가요?</h4>
             <p className="text-xs text-slate-400">
-              시스템 관리자(6자리)는 플라워샵 개설 및 운영 상태를 전체적으로 관리할 수 있습니다.
+              시스템 관리자는 플라워샵 개설 및 운영 상태를 전체적으로 관리할 수 있습니다.
             </p>
           </div>
           <Link
