@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v44 · 완성도 100% · 마지막 수정 2026. 10. 30. 13시 50분 34초
+> 문서 버전 v46 · 완성도 100% · 마지막 수정 2026. 10. 30. 14시 11분 27초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -111,15 +111,15 @@ CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempte
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 스택 및 데이터베이스 연결 사양
+### 기술 스택과 데이터베이스 연결 사양
 - **Framework**: Next.js 14+ (App Router, Server Actions)
-- **Database**: Neon PostgreSQL (`pg` 모듈 싱글톤 Pool 커넥션 방식을 사용하여 서버 환경에서 안전하게 연동)
+- **Database**: Neon PostgreSQL (`pg` 풀 커넥션 유틸리티를 사용하여 서버 사이드 전용 연결)
 - **Styling**: Tailwind CSS
 - **Icons**: `lucide-react`
 - **Utils**: `date-fns` (한국 시간대 및 월별 날짜 연산), `bcryptjs` (비밀번호 단방향 솔트 해싱)
 
-### 필수 환경 변수 (Vercel 설정)
-- `DATABASE_URL`: Neon PostgreSQL 전용 연결 문자열 (`postgres://...` 형태, Server Actions 및 서버 컴포넌트 전용)
+### 필수 환경 변수 (Vercel 및 Local `.env` 설정)
+- `DATABASE_URL`: Neon PostgreSQL 전용 연결 문자열 (`postgres://[user]:[password]@[neon-host]/[dbname]?sslmode=require` 형태, Server Actions 전용)
 - `APP_SESSION_SECRET`: 서명된 HttpOnly 세션 쿠키 암호화용 32자 이상 보안 무작위 키
 
 ### 디렉터리 구조
@@ -183,6 +183,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v46 | 2026. 10. 30. 14시 10분 48초 | 최종 감수: Neon PostgreSQL 기반 Next.js 개발 문서 최종 감수 완료 (구현 준비 완료 상태) |
+| v45 | 2026. 10. 30. 14시 5분 20초 | Neon DB API 키 및 환경 변수 연동 사양을 명확히 보강하고 전체 개발 문서를 최신 상태로 확정했습니다. |
 | v44 | 2026. 10. 30. 13시 48분 7초 | 최종 감수: Neon PostgreSQL 기반 Next.js 시스템 개발 사양에 맞춰 기능, 화면, 데이터베이스 스키마 및 테스트 시나리오의 상호 정합성을 검수 완료했습니다. |
 | v43 | 2026. 10. 30. 13시 47분 42초 | Neon PostgreSQL 기반의 최신 데이터 모델과 Next.js 서버 환경 구성을 명확히 반영하여 전체 기획 문서를 최종 재구성하였습니다. |
 | v42 | 2026. 10. 30. 12시 0분 23초 | 최종 감수: 최종 감수 완료: 3단계 권한(시스템 관리자·플라워샵 관리자·직원) 체계, 비밀번호 규칙(6자리/4자리), Neon DB DDL 및 무결성 제약조건, 급여 계산 알고리즘, 테스트 시나리오를 최종 검증하고 개발 준비를 완료했습니다. |

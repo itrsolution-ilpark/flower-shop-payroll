@@ -4,7 +4,7 @@
 
 ## 1. 사전 준비물 (비전문가용)
 - **Node.js**: 버전 20 이상 (`node -v` 명령어로 확인)
-- **Neon PostgreSQL**: [Neon](https://neon.tech) 무료 계정 및 PostgreSQL 데이터베이스 연결 주소 (`DATABASE_URL`)
+- **Neon PostgreSQL**: [Neon](https://neon.tech) 무료 계정 및 Pooled Connection String (`DATABASE_URL`)
 - 인터넷 브라우저 (Chrome, Edge, Safari 등)
 
 ## 2. 프로젝트 설치
@@ -16,13 +16,12 @@ npm install
 ## 3. 환경 변수 설정
 프로젝트 루트 폴더에 `.env.local` 파일을 생성하고 아래 내용을 입력합니다.
 ```text
-DATABASE_URL=postgres://username:password@ep-example-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
+DATABASE_URL=postgres://[user]:[password]@[neon-host]/[dbname]?sslmode=require
 APP_SESSION_SECRET=super-secret-random-key-at-least-32-chars
 ```
 
 ## 4. 데이터베이스 마이그레이션 (Neon PostgreSQL)
-Neon 콘솔의 **SQL Editor**에서 아래 파일 내용을 복사해 실행합니다.
-- `schema.sql` (또는 `db/migrations/001_initial_schema.sql`)
+Neon 콘솔의 **SQL Editor**에서 `schema.sql` (또는 `db/migrations/001_initial_schema.sql`) 파일 스크립트를 전체 실행하여 테이블 및 인덱스를 구축합니다.
 
 ## 5. 실행 방법
 ### 개발 서버 실행
@@ -36,15 +35,15 @@ npm run dev
 npm test
 ```
 
-### 프로덕션 빌드
+### 프로덕션 빌드 및 실행
 ```bash
 npm run build
 npm run start
 ```
 
 ## 6. 3계층 권한 및 이용 순서
-1. **시스템 관리자 최초 등록**: 시스템 관리자가 0명일 때 접속 시 자동으로 `/system-setup` 화면으로 이동하여 최초 관리자를 등록합니다.
-2. **플라워샵 개설**: 메인 화면의 [플라워샵 관리] 버튼을 눌러 인증 후 `/shop/register`에서 플라워샵을 개설하거나 이름을 수정합니다.
-3. **플라워샵 관리자 등록**: 메인 화면에서 플라워샵 카드의 [선택] 버튼을 눌러 `/shop/[id]`로 이동합니다. 관리자가 없을 경우 [관리자 등록]을 진행합니다.
-4. **직원 가입 및 승인**: 직원은 [직원 가입 신청]을 완료하고, 관리자는 `/admin` 대시보드에서 시급 또는 월급 조건과 금액, 적용 시작일을 설정해 [승인]합니다.
-5. **출퇴근 등록 및 급여 정산**: 시급 직원은 `/employee/dashboard`에서 출퇴근을 등록하고, 관리자는 `/admin/attendance`에서 월별 총 근무시간 및 총 지급 급여를 확인하고 필요 시 수동으로 보완합니다.
+1. **시스템 관리자 최초 등록**: DB에 시스템 관리자가 없을 경우 `/system/setup`으로 자동 유도하여 최초 관리자(6자리)를 등록합니다.
+2. **플라워샵 등록 및 상태 관리**: 시스템 관리자가 대시보드(`/system/dashboard`)에서 플라워샵을 개설하고 상태(`active` / `inactive`)를 토글 관리합니다.
+3. **플라워샵 최초/추가 관리자 등록**: 관리자가 없는 플라워샵은 `/signup`에서 최초 관리자(6자리)를 개설하고, 이후 추가 관리자는 대시보드 내부에서 등록합니다.
+4. **직원 가입 및 승인**: 직원은 `/signup`에서 가입을 신청(`pending` 상태)하고, 플라워샵 관리자가 시급/월급 조건 및 적용일을 설정하여 승인(`approved`)합니다.
+5. **출퇴근 기록 및 정산 CSV**: 승인된 직원은 `/employee/dashboard`에서 일별 출퇴근 시각을 등록하며, 관리자는 `/shop-admin/dashboard`에서 월별 정산 확인 및 UTF-8 with BOM CSV 다운로드를 진행합니다.
