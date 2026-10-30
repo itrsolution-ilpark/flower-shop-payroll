@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS auth_attempts (
 
 -- 9. 성능 최적화 인덱스
 CREATE INDEX IF NOT EXISTS idx_shops_status ON shops(status);
-CREATE INDEX IF NOT EXISTS idx_shop_admins_shop_id ON shops(shop_id);
+CREATE INDEX IF NOT EXISTS idx_shop_admins_shop_id ON shop_admins(shop_id);
 CREATE INDEX IF NOT EXISTS idx_staff_shop_status ON staff(shop_id, status);
 CREATE INDEX IF NOT EXISTS idx_compensation_staff ON compensation(staff_id, effective_from DESC);
 CREATE INDEX IF NOT EXISTS idx_attendance_staff_date ON attendance(staff_id, work_date);
