@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 기술·데이터 설계
 
-> 문서 버전 v46 · 완성도 100% · 마지막 수정 2026. 10. 30. 14시 11분 27초
+> 문서 버전 v48 · 완성도 100% · 마지막 수정 2026. 10. 30. 14시 59분 27초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -15,7 +15,7 @@
 
 ## 1. 데이터 모델
 
-### 데이터베이스 스키마 (Neon PostgreSQL 전체 실행 DDL)
+### 데이터베이스 스키마 (Neon PostgreSQL전용 실행 DDL)
 
 ```sql
 -- 1. 기존 테이블 정리
@@ -27,7 +27,7 @@ DROP TABLE IF EXISTS shop_admins CASCADE;
 DROP TABLE IF EXISTS shops CASCADE;
 DROP TABLE IF EXISTS system_admins CASCADE;
 
--- 2. 시스템 관리자 테이블 (복수 등록 지원, 6자리 비밀)
+-- 2. 시스템 관리자 테이블 (복수 등록 지원, 6자리 비밀번호)
 CREATE TABLE system_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
@@ -43,7 +43,7 @@ CREATE TABLE shops (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. 플라워샵 관리자 테이블 (플라워샵별 복수 등록 지원, 6자리 비밀)
+-- 4. 플라워샵 관리자 테이블 (플라워샵별 복수 등록 지원, 6자리 비밀번호)
 CREATE TABLE shop_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -53,7 +53,7 @@ CREATE TABLE shop_admins (
   UNIQUE (shop_id, name)
 );
 
--- 5. 플라워샵 직원 테이블 (상태: pending, approved, resigned, 4자리 비밀)
+-- 5. 플라워샵 직원 테이블 (상태: pending, approved, resigned, 4자리 비밀번호)
 CREATE TABLE staff (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -92,7 +92,7 @@ CREATE TABLE attendance (
   CHECK (clock_out > clock_in)
 );
 
--- 8. 로그인 시도 차단 테이블 (브루트포스 방지)
+-- 8. 무차별 대입 공격 방지 테이블
 CREATE TABLE auth_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_hash TEXT NOT NULL,
@@ -111,15 +111,15 @@ CREATE INDEX idx_auth_attempts_identity ON auth_attempts(identity_hash, attempte
 
 ## 2. 기술 스택과 폴더 구조
 
-### 기술 스택과 데이터베이스 연결 사양
+### 기술 스택 및 연동 사양
 - **Framework**: Next.js 14+ (App Router, Server Actions)
-- **Database**: Neon PostgreSQL (`pg` 풀 커넥션 유틸리티를 사용하여 서버 사이드 전용 연결)
+- **Database**: Neon PostgreSQL (`pg` 커넥션 풀을 사용하여 서버 측에서만 접속)
 - **Styling**: Tailwind CSS
 - **Icons**: `lucide-react`
-- **Utils**: `date-fns` (한국 시간대 및 월별 날짜 연산), `bcryptjs` (비밀번호 단방향 솔트 해싱)
+- **Utils**: `date-fns` (한국 시간대 및 월별 날짜 연산), `bcryptjs` (비밀번호 단방향 해싱)
 
 ### 필수 환경 변수 (Vercel 및 Local `.env` 설정)
-- `DATABASE_URL`: Neon PostgreSQL 전용 연결 문자열 (`postgres://[user]:[password]@[neon-host]/[dbname]?sslmode=require` 형태, Server Actions 전용)
+- `DATABASE_URL`: Neon PostgreSQL 연결 문자열 (`postgres://[user]:[password]@[neon-host]/[dbname]?sslmode=require`, Server Actions 전용)
 - `APP_SESSION_SECRET`: 서명된 HttpOnly 세션 쿠키 암호화용 32자 이상 보안 무작위 키
 
 ### 디렉터리 구조
@@ -132,7 +132,7 @@ flower-shop-payroll/
 │   │   ├── login/page.tsx                // 통합 로그인 (/login)
 │   │   ├── signup/page.tsx               // 가입 신청 (/signup)
 │   │   ├── system/
-│   │   │   ├── login/page.tsx            // 시스템 관리자 전용 로그인 (/system/login)
+│   │   │   ├── login/page.tsx            // 시스템 관리자 로그인 (/system/login)
 │   │   │   ├── setup/page.tsx            // 최초 시스템 관리자 등록 (/system/setup)
 │   │   │   └── dashboard/page.tsx        // 시스템 관리자 대시보드 (/system/dashboard)
 │   │   ├── shop-admin/
@@ -140,10 +140,10 @@ flower-shop-payroll/
 │   │   └── employee/
 │   │       └── dashboard/page.tsx        // 직원 대시보드 (/employee/dashboard)
 │   ├── actions/
-│   │   ├── systemActions.ts              // 시스템 관리자 등록, 플라워샵 생성/토글
-│   │   ├── shopAdminActions.ts           // 플라워샵 관리자 등록, 승인/퇴사, 급여조건 변경
+│   │   ├── systemActions.ts              // 시스템 관리자 및 플라워샵 등록/토글
+│   │   ├── shopAdminActions.ts           // 플라워샵 관리자 등록, 승인/퇴사, 급여조건 설정
 │   │   ├── staffActions.ts               // 직원 가입 신청, 출퇴근 기록 등록/수정
-│   │   ├── authActions.ts                // 통합 로그인, 세션 검증, 로그아웃
+│   │   ├── authActions.ts                // 통합 로그인, 세션 검증, 비밀번호 변경, 로그아웃
 │   │   └── exportActions.ts              // 급여 정산 CSV 데이터 생성
 │   ├── components/
 │   │   ├── Banner.tsx                    // 상단 고정 헤더 배너
@@ -171,7 +171,7 @@ flower-shop-payroll/
 3. **급여 계산 알고리즘**
    - **시급(`hourly`)**:
      - `time_unit = 'minute'`: `(총 근무 분 / 60) * 시급`, 원 단위 반올림 (`Math.round`)
-     - `time_unit = 'hour'`: `Math.floor(총 근무 분 / 60) * 시급` (시간 단위 정산)
+     - `time_unit = 'hour'`: `Math.floor(총 근무 분 / 60) * 시급` (시간 단위 절사 정산)
    - **월급(`monthly`)**:
      - 기본적으로 해당 월 고정액 지급. 월 중간 시작일 적용 시 해당 월 전체 일수 대비 유효 일수로 일할 계산
 4. **CSV 데이터 다운로드 형식**
@@ -183,6 +183,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v48 | 2026. 10. 30. 14시 58분 23초 | 최종 감수: 최종 감수를 통해 Next.js + Neon PostgreSQL 기반 문서 전반의 일관성 및 수용 기준을 완벽하게 검증 완료했습니다. |
+| v47 | 2026. 10. 30. 14시 57분 42초 | Neon PostgreSQL 및 Next.js App Router 사양에 맞춘 개발 문서 최종 확정 및 준비 완료 |
 | v46 | 2026. 10. 30. 14시 10분 48초 | 최종 감수: Neon PostgreSQL 기반 Next.js 개발 문서 최종 감수 완료 (구현 준비 완료 상태) |
 | v45 | 2026. 10. 30. 14시 5분 20초 | Neon DB API 키 및 환경 변수 연동 사양을 명확히 보강하고 전체 개발 문서를 최신 상태로 확정했습니다. |
 | v44 | 2026. 10. 30. 13시 48분 7초 | 최종 감수: Neon PostgreSQL 기반 Next.js 시스템 개발 사양에 맞춰 기능, 화면, 데이터베이스 스키마 및 테스트 시나리오의 상호 정합성을 검수 완료했습니다. |

@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 테스트·운영
 
-> 문서 버전 v46 · 완성도 100% · 마지막 수정 2026. 10. 30. 14시 11분 27초
+> 문서 버전 v48 · 완성도 100% · 마지막 수정 2026. 10. 30. 14시 59분 27초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -47,7 +47,7 @@
 ## 2. 배포와 운영
 
 ### 배포 및 DB 설정 절차
-1. **Neon PostgreSQL 인스턴스 준비**: Neon 콘솔 프로젝트 생성을 완료하고 해당 프로젝트의 SQL Editor에서 `schema.sql` 스크립트를 실행하여 모든 테이블과 인덱스를 구제합니다.
+1. **Neon PostgreSQL 인스턴스 준비**: Neon 콘솔 프로젝트 생성을 완료하고 SQL Editor에서 `schema.sql` 스크립트를 실행하여 모든 테이블과 인덱스를 구축합니다.
 2. **Neon Database Connection String 복사**: Neon 콘솔의 Dashboard / Connection Details에서 제공되는 `Pooled Connection String` (`DATABASE_URL`)을 복사합니다.
 3. **Vercel Environment Variables 등록**:
    - `DATABASE_URL`: 복사한 Neon DB 연결 URL 설정
@@ -59,6 +59,8 @@
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v48 | 2026. 10. 30. 14시 58분 23초 | 최종 감수: 최종 감수를 통해 Next.js + Neon PostgreSQL 기반 문서 전반의 일관성 및 수용 기준을 완벽하게 검증 완료했습니다. |
+| v47 | 2026. 10. 30. 14시 57분 42초 | Neon PostgreSQL 및 Next.js App Router 사양에 맞춘 개발 문서 최종 확정 및 준비 완료 |
 | v46 | 2026. 10. 30. 14시 10분 48초 | 최종 감수: Neon PostgreSQL 기반 Next.js 개발 문서 최종 감수 완료 (구현 준비 완료 상태) |
 | v45 | 2026. 10. 30. 14시 5분 20초 | Neon DB API 키 및 환경 변수 연동 사양을 명확히 보강하고 전체 개발 문서를 최신 상태로 확정했습니다. |
 | v44 | 2026. 10. 30. 13시 48분 7초 | 최종 감수: Neon PostgreSQL 기반 Next.js 시스템 개발 사양에 맞춰 기능, 화면, 데이터베이스 스키마 및 테스트 시나리오의 상호 정합성을 검수 완료했습니다. |
