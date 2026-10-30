@@ -142,7 +142,7 @@ export default function MainPage() {
           <div className="space-y-1 text-center sm:text-left">
             <h4 className="text-sm font-bold text-slate-100">프로그램 총괄 관리가 필요하신가요?</h4>
             <p className="text-xs text-slate-400">
-              시스템 관리자는 플라워샵 개설 및 운영 상태를 전체적으로 관리할 수 있습니다.
+              시스템 관리자(6자리)는 플라워샵 개설 및 운영 상태를 전체적으로 관리할 수 있습니다.
             </p>
           </div>
           <Link
