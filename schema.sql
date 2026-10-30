@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS shop_admins CASCADE;
 DROP TABLE IF EXISTS shops CASCADE;
 DROP TABLE IF EXISTS system_admins CASCADE;
 
--- 2. 시스템 관리자 테이블 (복수 등록 지원, 6자리 비밀)
+-- 2. 시스템 관리자 테이블 (복수 등록 지원, 6자리 비밀번호)
 CREATE TABLE system_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
@@ -23,7 +23,7 @@ CREATE TABLE shops (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. 플라워샵 관리자 테이블 (플라워샵별 복수 등록 지원, 6자리 비밀)
+-- 4. 플라워샵 관리자 테이블 (플라워샵별 복수 등록 지원, 6자리 비밀번호)
 CREATE TABLE shop_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -33,7 +33,7 @@ CREATE TABLE shop_admins (
   UNIQUE (shop_id, name)
 );
 
--- 5. 플라워샵 직원 테이블 (상태: pending, approved, resigned, 4자리 비밀)
+-- 5. 플라워샵 직원 테이블 (상태: pending, approved, resigned, 4자리 비밀번호)
 CREATE TABLE staff (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -72,7 +72,7 @@ CREATE TABLE attendance (
   CHECK (clock_out > clock_in)
 );
 
--- 8. 로그인 시도 차단 테이블 (브루트포스 방지)
+-- 8. 무차별 대입 공격 방지 테이블
 CREATE TABLE auth_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_hash TEXT NOT NULL,

@@ -4,7 +4,7 @@
 
 ## 1. 사전 준비물 (비전문가용)
 - **Node.js**: 버전 20 이상 (`node -v` 명령어로 확인)
-- **Neon PostgreSQL**: [Neon](https://neon.tech) 무료 계정 및 Pooled Connection String (`DATABASE_URL`)
+- **Neon PostgreSQL**: [Neon 콘솔](https://console.neon.tech) 무료 계정 및 Pooled Connection String (`DATABASE_URL`)
 - 인터넷 브라우저 (Chrome, Edge, Safari 등)
 
 ## 2. 프로젝트 설치
@@ -14,14 +14,15 @@ npm install
 ```
 
 ## 3. 환경 변수 설정
-프로젝트 루트 폴더에 `.env.local` 파일을 생성하고 아래 내용을 입력합니다.
+프로젝트 루트 폴더에 `.env.local` 파일(또는 Vercel 환경 변수)을 생성하고 아래 내용을 입력합니다.
 ```text
 DATABASE_URL=postgres://[user]:[password]@[neon-host]/[dbname]?sslmode=require
 APP_SESSION_SECRET=super-secret-random-key-at-least-32-chars
 ```
 
 ## 4. 데이터베이스 마이그레이션 (Neon PostgreSQL)
-Neon 콘솔의 **SQL Editor**에서 `schema.sql` (또는 `db/migrations/001_initial_schema.sql`) 파일 스크립트를 전체 실행하여 테이블 및 인덱스를 구축합니다.
+1. Neon 콘솔(console.neon.tech)에 접속하여 사용 중인 프로젝트의 **SQL Editor**로 이동합니다.
+2. `schema.sql` (또는 `db/migrations/001_initial_schema.sql`) 파일의 DDL 전체를 복사하여 SQL Editor에 붙여넣고 `Run` 버튼을 실행하여 테이블 및 인덱스를 구축합니다.
 
 ## 5. 실행 방법
 ### 개발 서버 실행

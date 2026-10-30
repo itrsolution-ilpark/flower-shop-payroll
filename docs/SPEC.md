@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 개발 문서
 
-> 문서 버전 v48 · 완성도 100% · 마지막 수정 2026. 10. 30. 14시 59분 27초
+> 문서 버전 v50 · 완성도 100% · 마지막 수정 2026. 10. 30. 15시 5분 37초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -97,7 +97,9 @@
 
 ## 5. 데이터 모델
 
-### 데이터베이스 스키마 (Neon PostgreSQL전용 실행 DDL)
+### 데이터베이스 스키마 (Neon PostgreSQL 전용 실행 DDL)
+
+Neon PostgreSQL 환경에서 앱 실행 전 반드시 아래 DDL 스크립트를 Neon SQL Editor에서 실행하거나 `schema.sql` 파일을 통해 초기화해야 합니다.
 
 ```sql
 -- 1. 기존 테이블 정리
@@ -289,14 +291,11 @@ flower-shop-payroll/
 
 ## 9. 배포와 운영
 
-### 배포 및 DB 설정 절차
-1. **Neon PostgreSQL 인스턴스 준비**: Neon 콘솔 프로젝트 생성을 완료하고 SQL Editor에서 `schema.sql` 스크립트를 실행하여 모든 테이블과 인덱스를 구축합니다.
-2. **Neon Database Connection String 복사**: Neon 콘솔의 Dashboard / Connection Details에서 제공되는 `Pooled Connection String` (`DATABASE_URL`)을 복사합니다.
-3. **Vercel Environment Variables 등록**:
-   - `DATABASE_URL`: 복사한 Neon DB 연결 URL 설정
-   - `APP_SESSION_SECRET`: 32자 이상의 임의 보안 암호화 문자열 등록
-4. **Vercel 재배포**: GitHub 저장소를 Vercel 프로젝트에 연동하고 Deploy 실행.
-5. **배포 후 스모크 테스트**: 지정된 5개 라우트 (`/`, `/login`, `/signup`, `/system/login`, `/system/setup`)의 정상 접근성 및 동작을 검증합니다.
+### 배포 및 DB 스키마 생성 절차
+1. **Neon DB Console 접속**: Neon 프로젝트 관리 콘솔(console.neon.tech)에 접속하여 대상 프로젝트의 **SQL Editor**로 이동합니다.
+2. **스키마(Schema) 생성 명령 실행**: 데이터 모델 섹션의 전체 DDL SQL 문을 복사하여 실행(`Run`)하거나, 서버 부팅 시 자동 스키마 체크/초기화 스크립트(`npm run db:init`)를 수행합니다.
+3. **Vercel 환경 변수 검증**: Vercel 프로젝트 설정의 Environment Variables에 `DATABASE_URL`(Pooled Connection)과 `APP_SESSION_SECRET`이 올바르게 등록되어 있는지 확인합니다.
+4. **재배포(Redeploy)**: Vercel 대시보드에서 `Redeploy`를 수행하여 생성된 DB와 연동을 완료합니다.
 
 ## 10. 테스트 계획
 
@@ -349,6 +348,8 @@ flower-shop-payroll/
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v50 | 2026. 10. 30. 15시 4분 33초 | 최종 감수: Neon PostgreSQL 및 Next.js App Router 기반 사양 감수 완료: 데이터 모델, 화면 구성, 수용 기준 및 테스트 시나리오 완결 |
+| v49 | 2026. 10. 30. 15시 4분 16초 | Neon PostgreSQL DB 스키마 초기화 DDL 및 테이블 자동/수동 생성 가이드를 명확히 재정비했습니다. |
 | v48 | 2026. 10. 30. 14시 58분 23초 | 최종 감수: 최종 감수를 통해 Next.js + Neon PostgreSQL 기반 문서 전반의 일관성 및 수용 기준을 완벽하게 검증 완료했습니다. |
 | v47 | 2026. 10. 30. 14시 57분 42초 | Neon PostgreSQL 및 Next.js App Router 사양에 맞춘 개발 문서 최종 확정 및 준비 완료 |
 | v46 | 2026. 10. 30. 14시 10분 48초 | 최종 감수: Neon PostgreSQL 기반 Next.js 개발 문서 최종 감수 완료 (구현 준비 완료 상태) |
