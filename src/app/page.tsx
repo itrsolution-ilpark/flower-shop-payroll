@@ -23,7 +23,7 @@ export default function MainPage() {
       {/* 최상단 고정 헤더 배너 (펠트 아트 테마 적용) */}
       <Banner />
 
-      <main className="flex-1 max-w-md md:max-w-xl mx-auto w-full px-4 py-6 md:py-8 space-y-6">
+      <main className="flex-1 max-w-md md:max-w-xl mx-auto w-full px-4 py-6 md:py-8 space-y-6 pb-16">
         {/* 히어로 카드 (Hand-crafted 펠트 아트 그래픽 테마 적용) */}
         <section className="bg-gradient-to-b from-emerald-700 via-emerald-800 to-teal-900 rounded-2xl p-6 text-white shadow-md border-2 border-emerald-600/30 relative overflow-hidden space-y-4">
           <div className="absolute top-0 right-0 -mr-6 -mt-6 w-28 h-28 bg-emerald-500/20 rounded-full blur-xl pointer-events-none" />
@@ -149,12 +149,12 @@ export default function MainPage() {
           </div>
           <Link
             href="/system/login"
-            className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline inline-flex items-center gap-1 transition"
+            className="mt-8 p-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
           >
-            <ShieldAlert className="w-3.5 h-3.5 text-slate-500" />
+            <ShieldAlert className="w-4 h-4 text-slate-700" />
             시스템 관리자 접속
           </Link>
-        </section>
+        </div>
       </main>
     </div>
   );
