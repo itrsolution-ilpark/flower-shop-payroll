@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import Banner from "@/components/Banner";
 import StatusBadge from "@/components/StatusBadge";
 import MonthPicker from "@/components/MonthPicker";
+import TimePicker from "@/components/TimePicker";
 import PinInput from "@/components/PinInput";
 import Button from "@/components/ui/Button";
-import { format } from "date-fns";
 import {
   getShopAdminDashboardDataAction,
   approveStaffAction,
@@ -15,228 +15,289 @@ import {
   resignStaffAction,
   addShopAdminAction,
   updateShopAdminSelfAction,
-  ShopAdminDashboardData,
+  PendingStaffItem,
   ApprovedStaffItem,
+  ShopAdminInfo,
 } from "@/actions/shopAdminActions";
-import { logoutAction } from "@/actions/authActions";
-import { exportMonthlyPayrollCsvAction } from "@/actions/exportActions";
 import { getStaffAttendanceMonthAction, saveAttendanceAction, AttendanceItem } from "@/actions/attendanceActions";
-import { Users, UserPlus, Download, Edit, LogOut, Settings, Clock, Save } from "lucide-react";
+import { exportMonthlyPayrollCsvAction } from "@/actions/exportActions";
+import { logoutAction } from "@/actions/logoutAction";
+import { Users, UserCheck, ShieldPlus, FileSpreadsheet, LogOut, KeyRound, Clock, Edit3, Download, Plus } from "lucide-react";
 
 export default function ShopAdminDashboardPage() {
   const router = useRouter();
-  const [data, setData] = useState<ShopAdminDashboardData | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), "yyyy-MM"));
   const [activeTab, setActiveTab] = useState<"staff" | "admins" | "payroll">("staff");
+  
+  const [monthStr, setMonthStr] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
   const [loading, setLoading] = useState<boolean>(true);
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const [actionSuccessMsg, setActionSuccessMsg] = useState<string>("");
+  const [shopName, setShopName] = useState<string>("");
+  const [adminName, setAdminName] = useState<string>("");
+  const [pendingStaff, setPendingStaff] = useState<PendingStaffItem[]>([]);
+  const [approvedStaff, setApprovedStaff] = useState<ApprovedStaffItem[]>([]);
+  const [otherAdmins, setOtherAdmins] = useState<ShopAdminInfo[]>([]);
 
-  // 직원 승인/수정 폼 입력 상태
-  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
-  const [payType, setPayType] = useState<"hourly" | "monthly">("hourly");
-  const [timeUnit, setTimeUnit] = useState<"minute" | "hour">("minute");
-  const [amountKrw, setAmountKrw] = useState<string>("10000");
-  const [effectiveFrom, setEffectiveFrom] = useState<string>(format(new Date(), "yyyy-MM-01"));
+  // 직원 승인 모달 상태
+  const [selectedPendingStaff, setSelectedPendingStaff] = useState<PendingStaffItem | null>(null);
+  const [approvePayType, setApprovePayType] = useState<"hourly" | "monthly">("hourly");
+  const [approveTimeUnit, setApproveTimeUnit] = useState<"minute" | "hour">("minute");
+  const [approveAmount, setApproveAmount] = useState<string>("10000");
+  const [approveEffectiveFrom, setApproveEffectiveFrom] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [approveError, setApproveError] = useState<string>("");
 
-  // 추가 관리자 등록 입력 상태
+  // 급여 조건 수정 모달 상태
+  const [selectedApprovedStaff, setSelectedApprovedStaff] = useState<ApprovedStaffItem | null>(null);
+  const [editPayType, setEditPayType] = useState<"hourly" | "monthly">("hourly");
+  const [editTimeUnit, setEditTimeUnit] = useState<"minute" | "hour">("minute");
+  const [editAmount, setEditAmount] = useState<string>("10000");
+  const [editEffectiveFrom, setEditEffectiveFrom] = useState<string>("");
+  const [editCompError, setEditCompError] = useState<string>("");
+
+  // 추가 관리자 등록 폼
   const [newAdminName, setNewAdminName] = useState<string>("");
   const [newAdminPin, setNewAdminPin] = useState<string>("");
-  const [adminSubmitting, setAdminSubmitting] = useState<boolean>(false);
+  const [addAdminError, setAddAdminError] = useState<string>("");
+  const [addAdminSuccess, setAddAdminSuccess] = useState<string>("");
 
-  // 관리자 본인 정보 수정 모달 상태
-  const [isSelfModalOpen, setIsSelfModalOpen] = useState<boolean>(false);
+  // 본인 정보 비밀번호 변경 모달
+  const [showSelfEditModal, setShowSelfEditModal] = useState<boolean>(false);
   const [selfName, setSelfName] = useState<string>("");
   const [selfPin, setSelfPin] = useState<string>("");
   const [selfConfirmPin, setSelfConfirmPin] = useState<string>("");
-  const [selfError, setSelfError] = useState<string>("");
+  const [selfEditError, setSelfEditError] = useState<string>("");
 
-  // 출퇴근 수정 상태 (정산 탭)
-  const [editingStaff, setEditingStaff] = useState<ApprovedStaffItem | null>(null);
-  const [staffAttendanceList, setStaffAttendanceList] = useState<AttendanceItem[]>([]);
-  const [editWorkDate, setEditWorkDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const [editClockIn, setEditClockIn] = useState<string>("09:00");
-  const [editClockOut, setEditClockOut] = useState<string>("18:00");
+  // 특정 직원 선택 근태 수정 모달
+  const [selectedPayrollStaff, setSelectedPayrollStaff] = useState<ApprovedStaffItem | null>(null);
+  const [staffAttendances, setStaffAttendances] = useState<AttendanceItem[]>([]);
+  const [editingAttDate, setEditingAttDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [editingClockIn, setEditingClockIn] = useState<string>("09:00");
+  const [editingClockOut, setEditingClockOut] = useState<string>("18:00");
+  const [attError, setAttError] = useState<string>("");
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [selectedMonth]);
-
-  const loadDashboardData = async () => {
+  const loadData = async () => {
     setLoading(true);
-    setErrorMsg("");
     try {
-      const res = await getShopAdminDashboardDataAction(selectedMonth);
+      const res = await getShopAdminDashboardDataAction(monthStr);
       if (!res.success || !res.data) {
-        setErrorMsg(res.error || "대시보드 데이터를 불러오지 못했습니다.");
-        if (res.error?.includes("권한")) {
-          router.push("/login");
-        }
+        router.replace("/login");
         return;
       }
-      setData(res.data);
-      setSelfName(res.data.adminName);
+      setShopName(res.data.shopName);
+      setAdminName(res.data.adminName);
+      setPendingStaff(res.data.pendingStaff);
+      setApprovedStaff(res.data.approvedStaff);
+      setOtherAdmins(res.data.otherAdmins);
     } catch {
-      setErrorMsg("데이터 로딩 중 오류가 발생했습니다.");
+      router.replace("/login");
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, [monthStr]);
 
   const handleLogout = async () => {
     await logoutAction();
     router.push("/");
   };
 
-  // 직원 가입 승인 처리
-  const handleApproveStaff = async (staffId: string) => {
-    setErrorMsg("");
-    setActionSuccessMsg("");
-    const amount = parseInt(amountKrw, 10);
+  // 1. 직원 가입 승인 처리
+  const handleApproveStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPendingStaff) return;
+    setApproveError("");
+
+    const amount = parseInt(approveAmount, 10);
     if (isNaN(amount) || amount <= 0) {
-      setErrorMsg("유효한 급여 금액을 입력해주세요.");
+      setApproveError("유효한 급여액을 입력해주세요.");
       return;
     }
 
-    const res = await approveStaffAction(staffId, payType, timeUnit, amount, effectiveFrom);
-    if (!res.success) {
-      setErrorMsg(res.error || "승인 처리 실패");
-      return;
+    try {
+      const res = await approveStaffAction(
+        selectedPendingStaff.id,
+        approvePayType,
+        approveTimeUnit,
+        amount,
+        approveEffectiveFrom
+      );
+      if (!res.success) {
+        setApproveError(res.error || "승인 처리에 실패했습니다.");
+        return;
+      }
+      setSelectedPendingStaff(null);
+      await loadData();
+    } catch {
+      setApproveError("처리 중 오류가 발생했습니다.");
     }
-    setActionSuccessMsg("직원이 정상적으로 승인되었습니다.");
-    setSelectedStaffId("");
-    loadDashboardData();
   };
 
-  // 기존 직원 급여 조건 수정
-  const handleUpdateComp = async (staffId: string) => {
-    setErrorMsg("");
-    setActionSuccessMsg("");
-    const amount = parseInt(amountKrw, 10);
+  // 2. 급여 조건 수정
+  const handleUpdateCompensation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedApprovedStaff) return;
+    setEditCompError("");
+
+    const amount = parseInt(editAmount, 10);
     if (isNaN(amount) || amount <= 0) {
-      setErrorMsg("유효한 급여 금액을 입력해주세요.");
+      setEditCompError("유효한 급여액을 입력해주세요.");
       return;
     }
 
-    const res = await updateCompensationAction(staffId, payType, timeUnit, amount, effectiveFrom);
-    if (!res.success) {
-      setErrorMsg(res.error || "급여 조건 변경 실패");
-      return;
+    try {
+      const res = await updateCompensationAction(
+        selectedApprovedStaff.id,
+        editPayType,
+        editTimeUnit,
+        amount,
+        editEffectiveFrom
+      );
+      if (!res.success) {
+        setEditCompError(res.error || "수정에 실패했습니다.");
+        return;
+      }
+      setSelectedApprovedStaff(null);
+      await loadData();
+    } catch {
+      setEditCompError("처리 중 오류가 발생했습니다.");
     }
-    setActionSuccessMsg("급여 조건이 수정되었습니다.");
-    setSelectedStaffId("");
-    loadDashboardData();
   };
 
-  // 직원 퇴사 처리
-  const handleResignStaff = async (staffId: string, name: string) => {
-    if (!confirm(`정말로 '${name}' 직원을 퇴사 처리하시겠습니까?`)) return;
-    setErrorMsg("");
-    setActionSuccessMsg("");
-
-    const res = await resignStaffAction(staffId);
-    if (!res.success) {
-      setErrorMsg(res.error || "퇴사 처리 실패");
+  // 3. 퇴사 처리
+  const handleResignStaff = async (staff: ApprovedStaffItem) => {
+    if (!confirm(`"${staff.name}" 직원을 퇴사 처리하시겠습니까? 퇴사 처리 시 로그인이 즉시 차단됩니다.`)) {
       return;
     }
-    setActionSuccessMsg("퇴사 처리가 완료되었습니다.");
-    loadDashboardData();
+    try {
+      const res = await resignStaffAction(staff.id);
+      if (res.success) {
+        await loadData();
+      } else {
+        alert(res.error || "퇴사 처리에 실패했습니다.");
+      }
+    } catch {
+      alert("처리 중 오류가 발생했습니다.");
+    }
   };
 
-  // 추가 관리자 등록
+  // 4. 추가 관리자 등록
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg("");
-    setActionSuccessMsg("");
+    setAddAdminError("");
+    setAddAdminSuccess("");
 
     if (!newAdminName.trim()) {
-      setErrorMsg("관리자 이름을 입력해주세요.");
+      setAddAdminError("관리자 이름을 입력해주세요.");
       return;
     }
     if (newAdminPin.length !== 6) {
-      setErrorMsg("관리자 비밀번호는 숫자 6자리여야 합니다.");
+      setAddAdminError("관리자 비밀번호는 숫자 6자리여야 합니다.");
       return;
     }
 
-    setAdminSubmitting(true);
-    const res = await addShopAdminAction(newAdminName, newAdminPin);
-    setAdminSubmitting(false);
-
-    if (!res.success) {
-      setErrorMsg(res.error || "추가 관리자 등록 실패");
-      return;
-    }
-
-    setActionSuccessMsg("새로운 관리자가 등록되었습니다.");
-    setNewAdminName("");
-    setNewAdminPin("");
-    loadDashboardData();
-  };
-
-  // 관리자 본인 정보 수정
-  const handleUpdateSelfInfo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSelfError("");
-
-    const res = await updateShopAdminSelfAction(selfName, selfPin, selfConfirmPin);
-    if (!res.success) {
-      setSelfError(res.error || "정보 수정 실패");
-      return;
-    }
-
-    setIsSelfModalOpen(false);
-    setSelfPin("");
-    setSelfConfirmPin("");
-    setActionSuccessMsg("본인 정보가 성공적으로 수정되었습니다.");
-    loadDashboardData();
-  };
-
-  // CSV 다운로드 처리
-  const handleDownloadCsv = async () => {
-    setErrorMsg("");
-    const res = await exportMonthlyPayrollCsvAction("", selectedMonth);
-    if (!res.success || !res.data || !res.filename) {
-      setErrorMsg(res.error || "CSV 다운로드 실패");
-      return;
-    }
-
-    const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", res.filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // 특정 직원의 출퇴근 상세 조회 (인라인 수정용)
-  const handleSelectStaffForAttendance = async (st: ApprovedStaffItem) => {
-    setEditingStaff(st);
     try {
-      const list = await getStaffAttendanceMonthAction(st.id, selectedMonth);
-      setStaffAttendanceList(list);
+      const res = await addShopAdminAction(newAdminName, newAdminPin);
+      if (!res.success) {
+        setAddAdminError(res.error || "등록에 실패했습니다.");
+        return;
+      }
+      setAddAdminSuccess("추가 관리자가 성공적으로 등록되었습니다.");
+      setNewAdminName("");
+      setNewAdminPin("");
+      await loadData();
     } catch {
-      setStaffAttendanceList([]);
+      setAddAdminError("처리 중 오류가 발생했습니다.");
     }
   };
 
-  // 인라인 출퇴근 기록 저장/수정
-  const handleSaveStaffAttendance = async (e: React.FormEvent) => {
+  // 5. 본인 정보 수정
+  const handleSelfEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingStaff) return;
-    setErrorMsg("");
+    setSelfEditError("");
 
-    const res = await saveAttendanceAction(editingStaff.id, editWorkDate, editClockIn, editClockOut);
-    if (!res.success) {
-      setErrorMsg(res.error || "출퇴근 기록 저장 실패");
+    if (!selfName.trim()) {
+      setSelfEditError("이름을 입력해주세요.");
+      return;
+    }
+    if (selfPin.length !== 6) {
+      setSelfEditError("비밀번호는 숫자 6자리여야 합니다.");
+      return;
+    }
+    if (selfPin !== selfConfirmPin) {
+      setSelfEditError("비밀번호 확인이 일치하지 않습니다.");
       return;
     }
 
-    setActionSuccessMsg("출퇴근 기록이 수정되었습니다.");
-    const list = await getStaffAttendanceMonthAction(editingStaff.id, selectedMonth);
-    setStaffAttendanceList(list);
-    loadDashboardData();
+    try {
+      const res = await updateShopAdminSelfAction(selfName, selfPin, selfConfirmPin);
+      if (!res.success) {
+        setSelfEditError(res.error || "수정에 실패했습니다.");
+        return;
+      }
+      setShowSelfEditModal(false);
+      await loadData();
+    } catch {
+      setSelfEditError("처리 중 오류가 발생했습니다.");
+    }
+  };
+
+  // 6. 근태 수정 모달 열기
+  const handleOpenAttendanceModal = async (staff: ApprovedStaffItem) => {
+    setSelectedPayrollStaff(staff);
+    const atts = await getStaffAttendanceMonthAction(staff.id, monthStr);
+    setStaffAttendances(atts);
+  };
+
+  // 근태 저장
+  const handleSaveAttendance = async () => {
+    if (!selectedPayrollStaff) return;
+    setAttError("");
+
+    const res = await saveAttendanceAction(
+      selectedPayrollStaff.id,
+      editingAttDate,
+      editingClockIn,
+      editingClockOut
+    );
+
+    if (!res.success) {
+      setAttError(res.error || "출퇴근 기록 저장 실패");
+      return;
+    }
+
+    const updated = await getStaffAttendanceMonthAction(selectedPayrollStaff.id, monthStr);
+    setStaffAttendances(updated);
+    await loadData();
+  };
+
+  // 7. CSV 다운로드
+  const handleDownloadCsv = async () => {
+    try {
+      const res = await exportMonthlyPayrollCsvAction("", monthStr);
+      if (!res.success || !res.data) {
+        alert(res.error || "CSV 생성 실패");
+        return;
+      }
+
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", res.filename || `flower_payroll_${monthStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      alert("CSV 다운로드 처리 중 오류가 발생했습니다.");
+    }
   };
 
   if (loading) {
@@ -244,27 +305,37 @@ export default function ShopAdminDashboardPage() {
       <div className="flex flex-col flex-1">
         <Banner />
         <div className="flex flex-1 items-center justify-center p-6 text-xs text-slate-500">
-          대시보드 불러오는 중...
+          플라워샵 관리 대시보드 데이터를 불러오는 중...
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col flex-1">
+    <div className="flex flex-col min-h-screen bg-slate-50">
+      {/* 상단 헤더: 소속 플라워샵명, 관리자명, '비밀번호 변경' 버튼, '로그아웃' 버튼 */}
       <Banner
         rightElement={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 md:gap-3">
+            <span className="text-xs font-semibold text-slate-700 hidden sm:inline">
+              [{shopName}] <strong className="text-emerald-700">{adminName} 관리자님</strong>
+            </span>
             <button
-              onClick={() => setIsSelfModalOpen(true)}
-              className="px-3 min-h-[38px] h-[38px] border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition"
+              onClick={() => {
+                setSelfName(adminName);
+                setSelfPin("");
+                setSelfConfirmPin("");
+                setSelfEditError("");
+                setShowSelfEditModal(true);
+              }}
+              className="px-3 min-h-[38px] h-[38px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
             >
-              <Settings className="w-3.5 h-3.5" />
-              관리자 정보 수정
+              <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+              비밀번호 변경
             </button>
             <button
               onClick={handleLogout}
-              className="px-3 min-h-[38px] h-[38px] bg-slate-100 text-slate-800 text-xs font-semibold rounded-xl hover:bg-slate-200 transition flex items-center gap-1.5"
+              className="px-3 min-h-[38px] h-[38px] bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
             >
               <LogOut className="w-3.5 h-3.5" />
               로그아웃
@@ -274,373 +345,142 @@ export default function ShopAdminDashboardPage() {
       />
 
       <main className="max-w-[1120px] mx-auto w-full p-4 md:p-6 space-y-6">
-        {/* 상단 타이틀 카드 */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-900">{data?.shopName}</h2>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                플라워샵 관리자
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              접속 관리자: <span className="font-semibold text-slate-800">{data?.adminName}</span> · 직원 가입 승인, 급여 조건 설정, 월별 정산을 관리합니다.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
-            <button
-              onClick={handleDownloadCsv}
-              className="min-h-[42px] h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition"
-            >
-              <Download className="w-4 h-4" />
-              CSV 다운로드
-            </button>
-          </div>
-        </div>
-
-        {/* 메인 탭 전환 */}
-        <div className="flex border-b border-slate-200 gap-2">
+        {/* 탭 구분 */}
+        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab("staff")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
               activeTab === "staff"
                 ? "border-emerald-600 text-emerald-700"
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
             <Users className="w-4 h-4" />
-            직원 승인 및 관리
-            {data?.pendingStaff.length ? (
-              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                {data.pendingStaff.length}
-              </span>
-            ) : null}
-          </button>
-          <button
-            onClick={() => setActiveTab("payroll")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
-              activeTab === "payroll"
-                ? "border-emerald-600 text-emerald-700"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            근무 및 급여 정산
+            직원 관리 ({pendingStaff.length > 0 && <span className="text-amber-600 font-extrabold">{pendingStaff.length}대기</span>})
           </button>
           <button
             onClick={() => setActiveTab("admins")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
               activeTab === "admins"
                 ? "border-emerald-600 text-emerald-700"
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
-            <UserPlus className="w-4 h-4" />
+            <ShieldPlus className="w-4 h-4" />
             추가 관리자 등록
+          </button>
+          <button
+            onClick={() => setActiveTab("payroll")}
+            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
+              activeTab === "payroll"
+                ? "border-emerald-600 text-emerald-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            근무 및 급여 정산
           </button>
         </div>
 
-        {/* 상단 상태 메시지 알림 */}
-        {errorMsg && (
-          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium text-center">
-            {errorMsg}
-          </div>
-        )}
-        {actionSuccessMsg && (
-          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium text-center">
-            {actionSuccessMsg}
-          </div>
-        )}
-
-        {/* TAB 1: 직원 승인 및 관리 */}
         {activeTab === "staff" && (
           <div className="space-y-6">
-            {/* 승인 대기 목록 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Users className="w-4 h-4 text-amber-600" />
-                승인 대기 직원 목록 (pending)
-              </h3>
+            {/* 승인 대기자 목록 */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-base font-bold text-slate-900">가입 승인 대기자 목록</h3>
+                </div>
+                <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+                  {pendingStaff.length}명 대기 중
+                </span>
+              </div>
 
-              {data?.pendingStaff.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4 text-center">승인 대기 중인 신규 가입 신청자가 없습니다.</p>
+              {pendingStaff.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4 text-center">승인 대기 중인 직원이 없습니다.</p>
               ) : (
-                <div className="space-y-3">
-                  {data?.pendingStaff.map((st) => (
-                    <div
-                      key={st.id}
-                      className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-slate-900">{st.name}</span>
-                          <StatusBadge status="pending" />
-                        </div>
-                        <span className="text-xs text-slate-500">신청일: {st.created_at}</span>
+                <div className="divide-y divide-slate-100">
+                  {pendingStaff.map((st) => (
+                    <div key={st.id} className="py-3 flex items-center justify-between text-xs">
+                      <div className="space-y-0.5">
+                        <span className="font-bold text-slate-900 text-sm block">{st.name}</span>
+                        <span className="text-slate-400">신청일: {st.created_at}</span>
                       </div>
-
-                      {/* 승인 정보 입력 폼 */}
-                      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end pt-2 border-t border-amber-200/60">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">급여 형태</label>
-                          <select
-                            value={selectedStaffId === st.id ? payType : "hourly"}
-                            onChange={(e) => {
-                              setSelectedStaffId(st.id);
-                              setPayType(e.target.value as "hourly" | "monthly");
-                            }}
-                            className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                          >
-                            <option value="hourly">시급</option>
-                            <option value="monthly">월급</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">계산 단위</label>
-                          <select
-                            value={selectedStaffId === st.id ? timeUnit : "minute"}
-                            onChange={(e) => {
-                              setSelectedStaffId(st.id);
-                              setTimeUnit(e.target.value as "minute" | "hour");
-                            }}
-                            className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                          >
-                            <option value="minute">분 단위 (정밀)</option>
-                            <option value="hour">시간 단위 (버림)</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">급여액 (원)</label>
-                          <input
-                            type="number"
-                            value={selectedStaffId === st.id ? amountKrw : "10000"}
-                            onChange={(e) => {
-                              setSelectedStaffId(st.id);
-                              setAmountKrw(e.target.value);
-                            }}
-                            placeholder="예: 10000"
-                            className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">적용 시작일</label>
-                          <input
-                            type="date"
-                            value={selectedStaffId === st.id ? effectiveFrom : format(new Date(), "yyyy-MM-01")}
-                            onChange={(e) => {
-                              setSelectedStaffId(st.id);
-                              setEffectiveFrom(e.target.value);
-                            }}
-                            className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                          />
-                        </div>
-
-                        <button
-                          onClick={() => handleApproveStaff(st.id)}
-                          className="h-9 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition shadow-sm"
-                        >
-                          승인 완료
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedPendingStaff(st);
+                          setApprovePayType("hourly");
+                          setApproveTimeUnit("minute");
+                          setApproveAmount("10000");
+                          setApproveError("");
+                        }}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition"
+                      >
+                        급여 조건 설정 및 승인
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* 재직 및 퇴사 직원 목록 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-900">소속 직원 목록 (승인 / 퇴사)</h3>
-
-              {data?.approvedStaff.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4 text-center">등록된 직원이 없습니다.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[640px]">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-xs text-slate-500 bg-slate-50">
-                        <th className="py-2.5 px-3">직원명</th>
-                        <th className="py-2.5 px-3">상태</th>
-                        <th className="py-2.5 px-3">급여 형태</th>
-                        <th className="py-2.5 px-3">계산 단위</th>
-                        <th className="py-2.5 px-3">적용 금액</th>
-                        <th className="py-2.5 px-3">적용 시작일</th>
-                        <th className="py-2.5 px-3 text-right">관리</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs">
-                      {data?.approvedStaff.map((st) => (
-                        <tr key={st.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-3 font-bold text-slate-900">{st.name}</td>
-                          <td className="py-3 px-3">
-                            <StatusBadge status={st.status} />
-                          </td>
-                          <td className="py-3 px-3">
-                            {st.pay_type === "hourly" ? "시급" : st.pay_type === "monthly" ? "월급" : "미설정"}
-                          </td>
-                          <td className="py-3 px-3">{st.time_unit === "hour" ? "시간" : "분"}</td>
-                          <td className="py-3 px-3 font-semibold text-emerald-700">
-                            {st.amount_krw ? `${st.amount_krw.toLocaleString()}원` : "미설정"}
-                          </td>
-                          <td className="py-3 px-3 text-slate-500">{st.effective_from || "-"}</td>
-                          <td className="py-3 px-3 text-right space-x-2">
-                            {st.status === "approved" && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setSelectedStaffId(st.id);
-                                    setPayType(st.pay_type || "hourly");
-                                    setTimeUnit(st.time_unit || "minute");
-                                    setAmountKrw(String(st.amount_krw || 10000));
-                                    setEffectiveFrom(st.effective_from || format(new Date(), "yyyy-MM-01"));
-                                  }}
-                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-xs font-semibold transition"
-                                >
-                                  조건 수정
-                                </button>
-                                <button
-                                  onClick={() => handleResignStaff(st.id, st.name)}
-                                  className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded text-xs font-semibold transition"
-                                >
-                                  퇴사 처리
-                                </button>
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* 조건 수정 선택 시 인라인 수정 폼 */}
-              {selectedStaffId && (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 mt-4">
-                  <h4 className="text-xs font-bold text-slate-900">직원 급여 조건 변경/등록</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">급여 형태</label>
-                      <select
-                        value={payType}
-                        onChange={(e) => setPayType(e.target.value as "hourly" | "monthly")}
-                        className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                      >
-                        <option value="hourly">시급</option>
-                        <option value="monthly">월급</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">계산 단위</label>
-                      <select
-                        value={timeUnit}
-                        onChange={(e) => setTimeUnit(e.target.value as "minute" | "hour")}
-                        className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                      >
-                        <option value="minute">분 단위 (정밀)</option>
-                        <option value="hour">시간 단위 (버림)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">급여액 (원)</label>
-                      <input
-                        type="number"
-                        value={amountKrw}
-                        onChange={(e) => setAmountKrw(e.target.value)}
-                        className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">적용 시작일</label>
-                      <input
-                        type="date"
-                        value={effectiveFrom}
-                        onChange={(e) => setEffectiveFrom(e.target.value)}
-                        className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => handleUpdateComp(selectedStaffId)}
-                      className="px-4 h-9 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition"
-                    >
-                      조건 저장
-                    </button>
-                    <button
-                      onClick={() => setSelectedStaffId("")}
-                      className="px-4 h-9 bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-300 transition"
-                    >
-                      취소
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: 근무 및 급여 정산 */}
-        {activeTab === "payroll" && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-bold text-slate-900">
-                  {selectedMonth} 월별 근무 및 정산 내역
-                </h3>
-                <button
-                  onClick={handleDownloadCsv}
-                  className="px-3 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1 transition"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  CSV 다운로드
-                </button>
+            {/* 재직 직원 목록 */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-base font-bold text-slate-900">재직/퇴사 직원 급여 설정 관리</h3>
+                <span className="text-xs text-slate-500">총 {approvedStaff.length}명</span>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[640px]">
+                <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 text-xs text-slate-500 bg-slate-50">
-                      <th className="py-2.5 px-3">직원명</th>
-                      <th className="py-2.5 px-3">급여 형태</th>
-                      <th className="py-2.5 px-3">적용 금액</th>
-                      <th className="py-2.5 px-3">총 근무 시간(분)</th>
-                      <th className="py-2.5 px-3">지급 예정액</th>
-                      <th className="py-2.5 px-3 text-right">근무기록 관리</th>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+                      <th className="p-3.5 pl-6">직원명</th>
+                      <th className="p-3.5">상태</th>
+                      <th className="p-3.5">급여 형태</th>
+                      <th className="p-3.5">계산 단위</th>
+                      <th className="p-3.5">금액(원)</th>
+                      <th className="p-3.5">적용 시작일</th>
+                      <th className="p-3.5 pr-6 text-right">관리</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {data?.approvedStaff.map((st) => (
-                      <tr key={st.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-3 font-bold text-slate-900">{st.name}</td>
-                        <td className="py-3 px-3">
+                  <tbody className="divide-y divide-slate-100">
+                    {approvedStaff.map((st) => (
+                      <tr key={st.id} className="hover:bg-slate-50 transition">
+                        <td className="p-3.5 pl-6 font-bold text-slate-900">{st.name}</td>
+                        <td className="p-3.5"><StatusBadge status={st.status} /></td>
+                        <td className="p-3.5 font-semibold text-slate-800">
                           {st.pay_type === "hourly" ? "시급" : st.pay_type === "monthly" ? "월급" : "미설정"}
                         </td>
-                        <td className="py-3 px-3">{st.amount_krw ? `${st.amount_krw.toLocaleString()}원` : "0원"}</td>
-                        <td className="py-3 px-3 font-medium text-slate-700">
-                          {st.pay_type === "hourly"
-                            ? `${Math.floor((st.totalMinutes || 0) / 60)}시간 ${(st.totalMinutes || 0) % 60}분 (${st.totalMinutes || 0}분)`
-                            : "-"}
+                        <td className="p-3.5 text-slate-600">
+                          {st.time_unit === "hour" ? "시간 단위" : "분 단위"}
                         </td>
-                        <td className="py-3 px-3 font-bold text-emerald-600">
-                          {st.monthlyAmount ? `${st.monthlyAmount.toLocaleString()}원` : "0원"}
+                        <td className="p-3.5 font-bold text-emerald-700">
+                          {st.amount_krw ? `${st.amount_krw.toLocaleString()}원` : "-"}
                         </td>
-                        <td className="py-3 px-3 text-right">
+                        <td className="p-3.5 text-slate-500">{st.effective_from || "-"}</td>
+                        <td className="p-3.5 pr-6 text-right space-x-2">
                           <button
-                            onClick={() => handleSelectStaffForAttendance(st)}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-xs font-semibold transition"
+                            onClick={() => {
+                              setSelectedApprovedStaff(st);
+                              setEditPayType(st.pay_type || "hourly");
+                              setEditTimeUnit(st.time_unit || "minute");
+                              setEditAmount(st.amount_krw ? String(st.amount_krw) : "10000");
+                              setEditEffectiveFrom(st.effective_from || `${monthStr}-01`);
+                              setEditCompError("");
+                            }}
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold text-xs transition"
                           >
-                            출퇴근 보완/수정
+                            조건 변경
                           </button>
+                          {st.status === "approved" && (
+                            <button
+                              onClick={() => handleResignStaff(st)}
+                              className="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg font-semibold text-xs transition"
+                            >
+                              퇴사 처리
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -648,106 +488,21 @@ export default function ShopAdminDashboardPage() {
                 </table>
               </div>
             </div>
-
-            {/* 선택한 직원의 일별 출퇴근 인라인 수정 카드 */}
-            {editingStaff && (
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h4 className="text-sm font-bold text-slate-900">
-                    '{editingStaff.name}' 직원의 {selectedMonth} 일별 근무 기록 보완 및 수정
-                  </h4>
-                  <button
-                    onClick={() => setEditingStaff(null)}
-                    className="text-xs text-slate-500 hover:text-slate-800 font-semibold"
-                  >
-                    닫기
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveStaffAttendance} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">근무 날짜</label>
-                    <input
-                      type="date"
-                      value={editWorkDate}
-                      onChange={(e) => setEditWorkDate(e.target.value)}
-                      className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">출근 시각</label>
-                    <input
-                      type="time"
-                      value={editClockIn}
-                      onChange={(e) => setEditClockIn(e.target.value)}
-                      className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">퇴근 시각</label>
-                    <input
-                      type="time"
-                      value={editClockOut}
-                      onChange={(e) => setEditClockOut(e.target.value)}
-                      className="w-full h-9 px-2.5 border border-slate-200 rounded-lg text-xs bg-white"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="h-9 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    저장/수정
-                  </button>
-                </form>
-
-                <div className="space-y-1.5 pt-2">
-                  <h5 className="text-xs font-bold text-slate-800">등록된 출퇴근 내역</h5>
-                  {staffAttendanceList.length === 0 ? (
-                    <p className="text-xs text-slate-400 py-2">등록된 근무 기록이 없습니다.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {staffAttendanceList.map((att) => (
-                        <div
-                          key={att.work_date}
-                          className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs"
-                        >
-                          <span className="font-semibold text-slate-900">{att.work_date}</span>
-                          <span className="text-slate-600">
-                            {att.clock_in} ~ {att.clock_out}
-                          </span>
-                          <span className="font-bold text-emerald-600">
-                            {Math.floor(att.total_minutes / 60)}시간 {att.total_minutes % 60}분
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* TAB 3: 추가 관리자 등록 */}
         {activeTab === "admins" && (
-          <div className="space-y-6 max-w-md mx-auto">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-emerald-600" />
-                추가 관리자 등록 (6자리 비밀번호)
-              </h3>
-              <p className="text-xs text-slate-500">
-                소속 플라워샵에 동등한 권한을 가진 추가 관리자를 2명 이상 등록할 수 있습니다.
-              </p>
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-lg">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <ShieldPlus className="w-5 h-5 text-slate-800" />
+                <h3 className="text-base font-bold text-slate-900">소속 플라워샵 추가 관리자 등록</h3>
+              </div>
 
               <form onSubmit={handleAddAdmin} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-800 mb-1">
-                    신규 관리자 이름
+                    추가 관리자 이름
                   </label>
                   <input
                     type="text"
@@ -765,17 +520,27 @@ export default function ShopAdminDashboardPage() {
                   length={6}
                 />
 
-                <Button type="submit" variant="primary" disabled={adminSubmitting}>
-                  {adminSubmitting ? "등록 중..." : "추가 관리자 생성"}
+                {addAdminError && (
+                  <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                    {addAdminError}
+                  </p>
+                )}
+                {addAdminSuccess && (
+                  <p className="text-xs text-emerald-700 font-medium bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
+                    {addAdminSuccess}
+                  </p>
+                )}
+
+                <Button type="submit" variant="primary">
+                  추가 관리자 등록
                 </Button>
               </form>
             </div>
 
-            {/* 현재 등록된 관리자 목록 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-              <h4 className="text-sm font-bold text-slate-900">등록된 관리자 목록</h4>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 max-w-2xl space-y-3">
+              <h4 className="text-sm font-bold text-slate-900">소속 등록 관리자 목록</h4>
               <div className="divide-y divide-slate-100">
-                {data?.otherAdmins.map((adm) => (
+                {otherAdmins.map((adm) => (
                   <div key={adm.id} className="py-2.5 flex items-center justify-between text-xs">
                     <span className="font-bold text-slate-800">{adm.name}</span>
                     <span className="text-slate-400">등록일: {adm.created_at}</span>
@@ -785,22 +550,309 @@ export default function ShopAdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {activeTab === "payroll" && (
+          <div className="space-y-6">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-800">정산 연월 선택:</span>
+                <MonthPicker value={monthStr} onChange={setMonthStr} />
+              </div>
+              <button
+                onClick={handleDownloadCsv}
+                className="px-4 min-h-[42px] h-[42px] bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-sm w-full sm:w-auto justify-center"
+              >
+                <Download className="w-4 h-4" />
+                월별 정산 내역 CSV 다운로드
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100">
+                <h3 className="text-base font-bold text-slate-900">{monthStr} 직원별 총 근무시간 및 지급액</h3>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+                      <th className="p-3.5 pl-6">직원명</th>
+                      <th className="p-3.5">상태</th>
+                      <th className="p-3.5">급여 형태</th>
+                      <th className="p-3.5">적용 단가/월급</th>
+                      <th className="p-3.5">해당월 총 근무분</th>
+                      <th className="p-3.5">지급 예정액</th>
+                      <th className="p-3.5 pr-6 text-right">출퇴근 내역 보완</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {approvedStaff.map((st) => (
+                      <tr key={st.id} className="hover:bg-slate-50 transition">
+                        <td className="p-3.5 pl-6 font-bold text-slate-900">{st.name}</td>
+                        <td className="p-3.5"><StatusBadge status={st.status} /></td>
+                        <td className="p-3.5 font-semibold text-slate-800">
+                          {st.pay_type === "hourly"
+                            ? `시급 (${st.time_unit === "hour" ? "시간단위" : "분단위"})`
+                            : "월급"}
+                        </td>
+                        <td className="p-3.5 text-slate-700">
+                          {st.amount_krw ? `${st.amount_krw.toLocaleString()}원` : "0원"}
+                        </td>
+                        <td className="p-3.5 font-bold text-slate-800">
+                          {st.totalMinutes || 0}분 (
+                          {Math.floor((st.totalMinutes || 0) / 60)}시간{" "}
+                          {(st.totalMinutes || 0) % 60}분)
+                        </td>
+                        <td className="p-3.5 font-extrabold text-emerald-700 text-sm">
+                          {(st.monthlyAmount || 0).toLocaleString()}원
+                        </td>
+                        <td className="p-3.5 pr-6 text-right">
+                          <button
+                            onClick={() => handleOpenAttendanceModal(st)}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold transition"
+                          >
+                            근무기록 관리
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* 관리자 본인 정보 수정 모달 */}
-      {isSelfModalOpen && (
+      {/* 승인 모달 */}
+      {selectedPendingStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl border border-slate-200 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">관리자 본인 정보 수정</h3>
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200 space-y-4">
+            <h3 className="text-base font-bold text-slate-900 border-b pb-2">
+              직원 가입 승인: {selectedPendingStaff.name}
+            </h3>
 
-            <form onSubmit={handleUpdateSelfInfo} className="space-y-4">
+            <form onSubmit={handleApproveStaff} className="space-y-4 text-xs">
               <div>
-                <label className="block text-xs font-semibold text-slate-800 mb-1">이름</label>
+                <label className="block font-semibold text-slate-800 mb-1">급여 형태</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setApprovePayType("hourly")}
+                    className={`py-2 rounded-xl font-bold border transition ${
+                      approvePayType === "hourly"
+                        ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-white text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    시급
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setApprovePayType("monthly")}
+                    className={`py-2 rounded-xl font-bold border transition ${
+                      approvePayType === "monthly"
+                        ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-white text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    월급
+                  </button>
+                </div>
+              </div>
+
+              {approvePayType === "hourly" && (
+                <div>
+                  <label className="block font-semibold text-slate-800 mb-1">계산 단위</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setApproveTimeUnit("minute")}
+                      className={`py-2 rounded-xl font-bold border transition ${
+                        approveTimeUnit === "minute"
+                          ? "bg-slate-800 text-white border-slate-800"
+                          : "bg-white text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      분 단위 정산 (반올림)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApproveTimeUnit("hour")}
+                      className={`py-2 rounded-xl font-bold border transition ${
+                        approveTimeUnit === "hour"
+                          ? "bg-slate-800 text-white border-slate-800"
+                          : "bg-white text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      시간 단위 정산 (절사)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-semibold text-slate-800 mb-1">
+                  {approvePayType === "hourly" ? "시급 금액 (원)" : "월급 금액 (원)"}
+                </label>
+                <input
+                  type="number"
+                  value={approveAmount}
+                  onChange={(e) => setApproveAmount(e.target.value)}
+                  placeholder="예: 10000"
+                  className="w-full min-h-[42px] px-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-800 mb-1">적용 시작일</label>
+                <input
+                  type="date"
+                  value={approveEffectiveFrom}
+                  onChange={(e) => setApproveEffectiveFrom(e.target.value)}
+                  className="w-full min-h-[42px] px-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
+
+              {approveError && (
+                <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2 rounded-lg border border-rose-200">
+                  {approveError}
+                </p>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setSelectedPendingStaff(null)}>
+                  취소
+                </Button>
+                <Button type="submit" variant="primary">
+                  승인 완료
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 조건 변경 모달 */}
+      {selectedApprovedStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200 space-y-4">
+            <h3 className="text-base font-bold text-slate-900 border-b pb-2">
+              급여 조건 변경: {selectedApprovedStaff.name}
+            </h3>
+
+            <form onSubmit={handleUpdateCompensation} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-800 mb-1">급여 형태</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditPayType("hourly")}
+                    className={`py-2 rounded-xl font-bold border transition ${
+                      editPayType === "hourly"
+                        ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-white text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    시급
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditPayType("monthly")}
+                    className={`py-2 rounded-xl font-bold border transition ${
+                      editPayType === "monthly"
+                        ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-white text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    월급
+                  </button>
+                </div>
+              </div>
+
+              {editPayType === "hourly" && (
+                <div>
+                  <label className="block font-semibold text-slate-800 mb-1">계산 단위</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditTimeUnit("minute")}
+                      className={`py-2 rounded-xl font-bold border transition ${
+                        editTimeUnit === "minute"
+                          ? "bg-slate-800 text-white border-slate-800"
+                          : "bg-white text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      분 단위 정산 (반올림)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditTimeUnit("hour")}
+                      className={`py-2 rounded-xl font-bold border transition ${
+                        editTimeUnit === "hour"
+                          ? "bg-slate-800 text-white border-slate-800"
+                          : "bg-white text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      시간 단위 정산 (절사)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-semibold text-slate-800 mb-1">금액 (원)</label>
+                <input
+                  type="number"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className="w-full min-h-[42px] px-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-800 mb-1">적용 시작일</label>
+                <input
+                  type="date"
+                  value={editEffectiveFrom}
+                  onChange={(e) => setEditEffectiveFrom(e.target.value)}
+                  className="w-full min-h-[42px] px-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
+
+              {editCompError && (
+                <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2 rounded-lg border border-rose-200">
+                  {editCompError}
+                </p>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setSelectedApprovedStaff(null)}>
+                  취소
+                </Button>
+                <Button type="submit" variant="primary">
+                  변경사항 저장
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 본인 정보 수정 모달 */}
+      {showSelfEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl p-6 shadow-xl border border-slate-200 space-y-4">
+            <h3 className="text-base font-bold text-slate-900 border-b pb-2">본인 정보 및 비밀번호 변경</h3>
+
+            <form onSubmit={handleSelfEdit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-800 mb-1">관리자 이름</label>
                 <input
                   type="text"
                   value={selfName}
                   onChange={(e) => setSelfName(e.target.value)}
-                  className="w-full min-h-[46px] h-[46px] px-3.5 border border-slate-200 rounded-xl text-sm bg-white text-slate-900"
+                  className="w-full min-h-[42px] px-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
               </div>
 
@@ -812,16 +864,20 @@ export default function ShopAdminDashboardPage() {
               />
 
               <PinInput
-                label="비밀번호 확인"
+                label="새 비밀번호 확인"
                 value={selfConfirmPin}
                 onChange={setSelfConfirmPin}
                 length={6}
               />
 
-              {selfError && <p className="text-xs text-rose-600 text-center font-medium">{selfError}</p>}
+              {selfEditError && (
+                <p className="text-xs text-rose-600 font-medium bg-rose-50 p-2 rounded-lg border border-rose-200">
+                  {selfEditError}
+                </p>
+              )}
 
               <div className="flex gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={() => setIsSelfModalOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setShowSelfEditModal(false)}>
                   취소
                 </Button>
                 <Button type="submit" variant="primary">
@@ -829,6 +885,84 @@ export default function ShopAdminDashboardPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 근태 기록 관리 모달 */}
+      {selectedPayrollStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-2">
+              <h3 className="text-base font-bold text-slate-900">
+                [{selectedPayrollStaff.name}] 직원의 근무 기록 관리 ({monthStr})
+              </h3>
+              <button
+                onClick={() => setSelectedPayrollStaff(null)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 근태 직접 추가/수정 폼 */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3 text-xs">
+              <span className="font-bold text-slate-800 block">일별 출퇴근 기록 등록/수정</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-slate-600 mb-1">날짜</label>
+                  <input
+                    type="date"
+                    value={editingAttDate}
+                    onChange={(e) => setEditingAttDate(e.target.value)}
+                    className="w-full h-[38px] px-2 border border-slate-200 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 mb-1">출근 시간</label>
+                  <TimePicker value={editingClockIn} onChange={setEditingClockIn} />
+                </div>
+                <div>
+                  <label className="block text-slate-600 mb-1">퇴근 시간</label>
+                  <TimePicker value={editingClockOut} onChange={setEditingClockOut} />
+                </div>
+              </div>
+              {attError && <p className="text-rose-600">{attError}</p>}
+              <Button type="button" variant="primary" onClick={handleSaveAttendance} className="min-h-[38px] h-[38px]">
+                기록 저장
+              </Button>
+            </div>
+
+            {/* 해당 월 출퇴근 내역 테이블 */}
+            <div className="space-y-2">
+              <span className="font-bold text-xs text-slate-800 block">
+                {monthStr} 등록된 출퇴근 내역 ({staffAttendances.length}건)
+              </span>
+              {staffAttendances.length === 0 ? (
+                <p className="text-xs text-slate-500 py-3 text-center">등록된 출퇴근 기록이 없습니다.</p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 text-xs">
+                  {staffAttendances.map((att) => (
+                    <div key={att.id || att.work_date} className="p-2.5 flex items-center justify-between hover:bg-slate-50">
+                      <span className="font-semibold text-slate-900">{att.work_date}</span>
+                      <span className="text-slate-700">
+                        {att.clock_in} ~ {att.clock_out} ({att.total_minutes}분)
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditingAttDate(att.work_date);
+                          setEditingClockIn(att.clock_in);
+                          setEditingClockOut(att.clock_out);
+                        }}
+                        className="text-emerald-700 hover:underline font-semibold"
+                      >
+                        수정
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

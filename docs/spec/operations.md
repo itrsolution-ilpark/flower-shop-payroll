@@ -1,6 +1,6 @@
 # 플라워샵 근무 관리 — 테스트·운영
 
-> 문서 버전 v50 · 완성도 100% · 마지막 수정 2026. 10. 30. 15시 5분 37초
+> 문서 버전 v51 · 완성도 100% · 마지막 수정 2026. 10. 30. 15시 27분 19초
 > 이 문서만 보고 AI(또는 개발자)가 개발해도 거의 같은 결과가 나오도록 작성되었습니다.
 
 ## 기본 정보
@@ -46,16 +46,18 @@
 
 ## 2. 배포와 운영
 
-### 배포 및 DB 스키마 생성 절차
-1. **Neon DB Console 접속**: Neon 프로젝트 관리 콘솔(console.neon.tech)에 접속하여 대상 프로젝트의 **SQL Editor**로 이동합니다.
-2. **스키마(Schema) 생성 명령 실행**: 데이터 모델 섹션의 전체 DDL SQL 문을 복사하여 실행(`Run`)하거나, 서버 부팅 시 자동 스키마 체크/초기화 스크립트(`npm run db:init`)를 수행합니다.
-3. **Vercel 환경 변수 검증**: Vercel 프로젝트 설정의 Environment Variables에 `DATABASE_URL`(Pooled Connection)과 `APP_SESSION_SECRET`이 올바르게 등록되어 있는지 확인합니다.
-4. **재배포(Redeploy)**: Vercel 대시보드에서 `Redeploy`를 수행하여 생성된 DB와 연동을 완료합니다.
+### 배포 및 Neon DB 스키마 생성 절차
+
+1. **Neon DB Console 접속**: Neon 콘솔(console.neon.tech)에 접속하여 사용 중인 DB 프로젝트의 **SQL Editor**로 이동합니다.
+2. **DDL 스키마 적용**: `data` 섹션에 작성된 전체 SQL(테이블 8개 및 성능 최적화 인덱스)을 복사하여 SQL Editor에서 실행(`Run`)합니다.
+3. **Vercel 환경 변수 설정**: Vercel 대시보드의 Environment Variables 메뉴에서 `DATABASE_URL`(Neon Pooled Connection String)과 `APP_SESSION_SECRET`을 확인 및 등록합니다.
+4. **Vercel 재배포**: Vercel 대시보드에서 `Redeploy`를 실행하여 생성된 Neon DB와 Next.js Server Actions 연동을 마무리합니다.
 
 ## 변경 이력
 
 | 버전 | 일시 | 변경 내용 |
 | --- | --- | --- |
+| v51 | 2026. 10. 30. 15시 23분 38초 | Neon PostgreSQL DB 스키마 생성 및 연동 명세를 최종 검증하여 개발 준비를 완료하였습니다. |
 | v50 | 2026. 10. 30. 15시 4분 33초 | 최종 감수: Neon PostgreSQL 및 Next.js App Router 기반 사양 감수 완료: 데이터 모델, 화면 구성, 수용 기준 및 테스트 시나리오 완결 |
 | v49 | 2026. 10. 30. 15시 4분 16초 | Neon PostgreSQL DB 스키마 초기화 DDL 및 테이블 자동/수동 생성 가이드를 명확히 재정비했습니다. |
 | v48 | 2026. 10. 30. 14시 58분 23초 | 최종 감수: 최종 감수를 통해 Next.js + Neon PostgreSQL 기반 문서 전반의 일관성 및 수용 기준을 완벽하게 검증 완료했습니다. |
