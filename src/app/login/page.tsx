@@ -133,7 +133,7 @@ function LoginContent() {
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              플라워샵 관리자 [6자리]
+              플라워샵 관리자
             </button>
             <button
               type="button"
@@ -145,7 +145,7 @@ function LoginContent() {
               }`}
             >
               <User className="w-3.5 h-3.5" />
-              직원 [4자리]
+              직원
             </button>
           </div>
 
