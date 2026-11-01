@@ -7,7 +7,7 @@ import Banner from "@/components/Banner";
 import PinInput from "@/components/PinInput";
 import Button from "@/components/ui/Button";
 import { getActiveShopsAction, loginUserAction, ActiveShopOption } from "@/actions/authActions";
-import { ShieldCheck, User, Store, LogIn } from "lucide-react";
+import { ShieldCheck, User } from "lucide-react";
 
 function LoginContent() {
   const router = useRouter();
@@ -32,7 +32,7 @@ function LoginContent() {
         }
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedShopId]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,31 +121,31 @@ function LoginContent() {
             </div>
           </div>
 
-          {/* 사용자 구분 탭 ('플라워샵 관리자' [6자리] / '직원' [4자리]) */}
+          {/* 사용자 구분 탭 순서: 1. 플라워샵 관리자 (6자리) -> 2. 직원 (4자리) */}
           <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
             <button
               type="button"
               onClick={() => handleTypeChange("admin")}
-              className={`min-h-[40px] rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+              className={`min-h-[44px] rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 px-2 ${
                 userType === "admin"
-                  ? "bg-white text-emerald-700 shadow-sm"
+                  ? "bg-white text-emerald-700 shadow-sm font-bold"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              플라워샵 관리자 [6자리]
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>플라워샵 관리자 (6자리)</span>
             </button>
             <button
               type="button"
               onClick={() => handleTypeChange("staff")}
-              className={`min-h-[40px] rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+              className={`min-h-[44px] rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 px-2 ${
                 userType === "staff"
-                  ? "bg-white text-emerald-700 shadow-sm"
+                  ? "bg-white text-emerald-700 shadow-sm font-bold"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <User className="w-3.5 h-3.5" />
-              직원 [4자리]
+              <User className="w-3.5 h-3.5 shrink-0" />
+              <span>직원 (4자리)</span>
             </button>
           </div>
 
