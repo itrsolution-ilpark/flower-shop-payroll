@@ -179,7 +179,7 @@ export default function SystemDashboardPage() {
               <Shield className="w-3.5 h-3.5 text-emerald-400" />
               시스템 관리자
             </div>
-            <h2 className="text-xl font-extrabold tracking-tight">시스템 전체 관리 대시보드</h2>
+            <h2 className="text-xl font-extrabold tracking-tight">관리자 대시보드</h2>
             <p className="text-xs text-slate-300">
               플라워샵 개설, 상태 제어, 추가 시스템 관리자를 총괄 운영합니다.
             </p>

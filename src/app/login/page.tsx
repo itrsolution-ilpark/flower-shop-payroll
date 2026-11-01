@@ -132,8 +132,8 @@ function LoginContent() {
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>플라워샵 관리자 (6자리)</span>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              플라워샵 관리자
             </button>
             <button
               type="button"
@@ -144,8 +144,8 @@ function LoginContent() {
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <User className="w-3.5 h-3.5 shrink-0" />
-              <span>직원 (4자리)</span>
+              <User className="w-3.5 h-3.5" />
+              직원
             </button>
           </div>
 

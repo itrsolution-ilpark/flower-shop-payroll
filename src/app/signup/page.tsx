@@ -131,7 +131,7 @@ function SignupContent() {
       <main className="max-w-md mx-auto w-full p-4 md:p-6 my-auto space-y-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
           <div className="text-center space-y-1">
-            <h2 className="text-xl font-bold text-slate-900">신규 가입 신청 / 개설</h2>
+            <h2 className="text-xl font-bold text-slate-900">신규 가입</h2>
             <p className="text-xs text-slate-500">원하시는 가입 유형을 선택하세요.</p>
           </div>
 
@@ -147,7 +147,7 @@ function SignupContent() {
               }`}
             >
               <UserPlus className="w-3.5 h-3.5" />
-              직원 가입 신청 [4자리]
+              직원 가입 신청
             </button>
             <button
               type="button"
@@ -159,7 +159,7 @@ function SignupContent() {
               }`}
             >
               <ShieldPlus className="w-3.5 h-3.5" />
-              최초 관리자 개설 [6자리]
+              플라워샵 관리자 신청
             </button>
           </div>
 
